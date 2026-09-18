@@ -18,9 +18,11 @@ npm = shutil.which('npm.cmd' if os.name == 'nt' else 'npm')
 if not python.exists() or not npm or not (ROOT / 'frontend/node_modules').exists():
     sys.exit('Run setup.ps1 first (Python 3.11+ and Node 20.9+ required).')
 processes = []
+child_env = os.environ.copy()
+child_env.pop('PYTHONPATH', None)
 try:
-    processes.append(subprocess.Popen([str(python), '-m', 'uvicorn', 'backend.app:app', '--host', '127.0.0.1', '--port', '8000'], cwd=ROOT))
-    processes.append(subprocess.Popen([npm, 'run', 'dev'], cwd=ROOT / 'frontend'))
+    processes.append(subprocess.Popen([str(python), '-m', 'uvicorn', 'backend.app:app', '--host', '127.0.0.1', '--port', '8000'], cwd=ROOT, env=child_env))
+    processes.append(subprocess.Popen([npm, 'run', 'dev'], cwd=ROOT / 'frontend', env=child_env))
     print('\nOpen http://localhost:3000 — company key: configured COMPANY_KEY or demo-company\n', flush=True)
     while all(p.poll() is None for p in processes):
         time.sleep(1)
@@ -31,3 +33,4 @@ finally:
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True)
             else:
                 process.terminate()
+
