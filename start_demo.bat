@@ -1,1 +1,16 @@
-@echo off`r`nsetlocal`r`ncd /d "%~dp0"`r`nset PYTHONPATH=`r`nif not exist ".venv\Scripts\python.exe" (`r`n  echo Python environment .venv was not found.`r`n  echo Run setup.ps1 first.`r`n  pause`r`n  exit /b 1`r`n)`r`necho Starting Autosobes...`r`necho Open http://localhost:3000`r`necho Company key: demo-company`r`necho Close this window or press Ctrl+C to stop.`r`n".venv\Scripts\python.exe" run_demo.py`r`npause`r`n
+@echo off
+setlocal
+cd /d "%~dp0"
+set PYTHONPATH=
+if not exist ".venv\Scripts\python.exe" (
+  echo Python environment .venv was not found.
+  echo Run setup.ps1 first.
+  pause
+  exit /b 1
+)
+echo Starting Autosobes...
+echo Open http://localhost:3000
+echo Company key: demo-company
+echo Close this window or press Ctrl+C to stop.
+".venv\Scripts\python.exe" run_demo.py
+pause
