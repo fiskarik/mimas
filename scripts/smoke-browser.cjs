@@ -18,7 +18,7 @@ const path = require('node:path');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(60000);
-    await page.goto('http://localhost:3000');
+    await page.goto('http://localhost:3000/?view=company');
     await page.getByRole('button', {name: 'Открыть кабинет'}).click();
     await page.getByPlaceholder('Например, Алексей Иванов').fill('Автотест — синтетическая камера');
     await page.getByRole('button', {name: 'Создать приглашение'}).click();
@@ -62,6 +62,7 @@ const path = require('node:path');
     await page.getByRole('button', {name: 'Обновить', exact: true}).click();
     await page.getByRole('button', {name: 'Отчёт', exact: true}).first().click();
     await page.getByText('ОТЧЁТ ОБ ИНТЕРВЬЮ', {exact: true}).waitFor();
+    await page.getByRole('button', {name: 'Запись и события', exact: true}).click();
     const video = page.locator('.video-report video');
     await video.waitFor();
     await page.waitForFunction(() => {

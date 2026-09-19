@@ -10,10 +10,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv('COMPANY_KEY', 'test-employer')
     monkeypatch.setenv('AI_MODE', 'mock')
     monkeypatch.delenv('GROQ_API_KEY', raising=False)
+    monkeypatch.delenv('DATABASE_URL', raising=False)
     sys.modules.pop('backend.app', None)
     module = importlib.import_module('backend.app')
     with TestClient(module.app) as c:
         yield c
+    module.database.engine.dispose()
 
 
 COMPANY = {'X-Company-Key': 'test-employer'}

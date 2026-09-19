@@ -1,6 +1,16 @@
 # Автособес — каркас локального демо
 
-Next.js + TypeScript, FastAPI, SQLite. Приглашение → проверка устройств → 3 вопроса → Python-код → защита решения → запись и отчёт.
+Next.js + TypeScript, FastAPI, SQLAlchemy 2 + SQLite. Приглашение → проверка устройств → 3 вопроса → Python-код → защита решения → запись и отчёт.
+
+## База данных
+
+Модели и транзакции находятся в `backend/database.py`: Interview, AnswerRecord, IntegrityEvent, RecordingChunk. API использует SQLAlchemy Session; SQLite остаётся движком по умолчанию. Существующая `data/demo.sqlite3` читается без переноса: названия таблиц, типы полей и формат JSON-оценок сохранены. Видеофайлы остаются в `data/recordings`.
+
+После обновления установите зависимости: `.venv\Scripts\python.exe -m pip install -r backend/requirements.lock.txt`, затем перезапустите демо.
+
+Необязательная переменная `DATABASE_URL` задаёт подключение SQLAlchemy. Пустое значение использует прежнюю SQLite в DATA_DIR. Для PostgreSQL в дальнейшем понадобятся сервер, драйвер psycopg и перенос данных; смена URL сама данные не переносит. PostgreSQL в этом изменении не проверялся.
+
+Таблицы создаются через `Base.metadata.create_all` только при отсутствии. Это не система миграций: для последующих изменений схемы потребуется Alembic. Транзакции автоматически откатываются при ошибках, сессии закрываются; операции записи SQLite сериализуются через BEGIN IMMEDIATE.
 
 ## Запуск на Windows
 

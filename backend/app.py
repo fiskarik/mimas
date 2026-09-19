@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import sqlite3
 import time
 from typing import Literal
 from uuid import uuid4
@@ -13,10 +12,13 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from backend.database import Database, Interview, AnswerRecord, IntegrityEvent, RecordingChunk, as_dict
 
 DATA = Path(os.getenv('DATA_DIR', Path(__file__).resolve().parents[1] / 'data'))
 DATA.mkdir(parents=True, exist_ok=True)
 DB = DATA / 'demo.sqlite3'
+database = Database(DB, os.getenv('DATABASE_URL'))
 COMPANY_KEY = os.getenv('COMPANY_KEY', 'demo-company')
 app = FastAPI(title='Autosobes demo', version='0.1.0')
 
@@ -28,45 +30,16 @@ QUESTIONS = [
     {'id': 'defense', 'skill': 'Объяснение решения', 'text': 'Объясните своё решение: как оно сохраняет порядок имён, какова сложность по времени и что произойдёт, если у пользователя нет поля city?'},
 ]
 
-def connect():
-    db = sqlite3.connect(DB, timeout=15)
-    db.row_factory = sqlite3.Row
-    return db
-
-with connect() as db:
-    db.executescript('''
-    CREATE TABLE IF NOT EXISTS interviews (
-        id TEXT PRIMARY KEY, token TEXT NOT NULL, name TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'invited', created REAL NOT NULL,
-        started REAL, completed REAL, mode TEXT NOT NULL,
-        expected_chunks INTEGER, recording_complete INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS answers (
-        interview_id TEXT NOT NULL, question_id TEXT NOT NULL, text TEXT NOT NULL,
-        created REAL NOT NULL, evaluation TEXT, next_question TEXT,
-        PRIMARY KEY(interview_id, question_id)
-    );
-    CREATE TABLE IF NOT EXISTS events (
-        id TEXT NOT NULL, interview_id TEXT NOT NULL, kind TEXT NOT NULL,
-        elapsed REAL NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL,
-        PRIMARY KEY(interview_id, id)
-    );
-    CREATE TABLE IF NOT EXISTS chunks (
-        interview_id TEXT NOT NULL, seq INTEGER NOT NULL, digest TEXT NOT NULL,
-        size INTEGER NOT NULL, PRIMARY KEY(interview_id, seq)
-    );
-    ''')
-
 def company(key):
     if not key or not secrets.compare_digest(key, COMPANY_KEY):
         raise HTTPException(401, 'Неверный ключ работодателя')
 
 def get_interview(interview_id):
-    with connect() as db:
-        row = db.execute('SELECT * FROM interviews WHERE id=?', (interview_id,)).fetchone()
+    with database.session() as db:
+        row = db.get(Interview, interview_id)
     if not row:
         raise HTTPException(404, 'Интервью не найдено')
-    return dict(row)
+    return as_dict(row)
 
 def candidate(interview_id, token):
     row = get_interview(interview_id)
@@ -102,22 +75,21 @@ def create_interview(body: Invite, x_company_key: str | None = Header(None)):
     if configuration()['mode'] == 'live' and not configuration()['ai_ready']:
         raise HTTPException(503, 'Для live-режима задайте GROQ_API_KEY и GROQ_MODEL')
     iid, token = uuid4().hex, secrets.token_urlsafe(32)
-    with connect() as db:
-        db.execute('INSERT INTO interviews(id,token,name,created,mode) VALUES(?,?,?,?,?)',
-                   (iid, token, body.name.strip(), time.time(), configuration()['mode']))
+    with database.session(write=True) as db:
+        db.add(Interview(id=iid, token=token, name=body.name.strip(), created=time.time(), mode=configuration()['mode']))
     return {'id': iid, 'token': token}
 
 @app.get('/api/interviews')
 def list_interviews(x_company_key: str | None = Header(None)):
     company(x_company_key)
-    with connect() as db:
-        return [public(dict(row)) for row in db.execute('SELECT * FROM interviews ORDER BY created DESC')]
+    with database.session() as db:
+        return [public(as_dict(row)) for row in db.scalars(select(Interview).order_by(Interview.created.desc()))]
 
 def details(row):
-    with connect() as db:
-        answers = [dict(r) for r in db.execute('SELECT * FROM answers WHERE interview_id=? ORDER BY created', (row['id'],))]
-        events = [dict(r) for r in db.execute('SELECT * FROM events WHERE interview_id=? ORDER BY elapsed', (row['id'],))]
-        chunks = db.execute('SELECT count(*) FROM chunks WHERE interview_id=?', (row['id'],)).fetchone()[0]
+    with database.session() as db:
+        answers = [as_dict(r) for r in db.scalars(select(AnswerRecord).where(AnswerRecord.interview_id == row['id']).order_by(AnswerRecord.created))]
+        events = [as_dict(r) for r in db.scalars(select(IntegrityEvent).where(IntegrityEvent.interview_id == row['id']).order_by(IntegrityEvent.elapsed))]
+        chunks = database.count(db, RecordingChunk, row['id'])
     for answer in answers:
         answer['evaluation'] = json.loads(answer['evaluation']) if answer['evaluation'] else None
     questions = [dict(q) for q in QUESTIONS]
@@ -146,8 +118,12 @@ def start(iid: str, body: Start, x_interview_token: str | None = Header(None)):
         raise HTTPException(422, 'Требуется согласие на запись')
     if row['status'] != 'invited':
         raise HTTPException(409, 'Интервью уже запускалось. Используйте исходную вкладку или новое приглашение.')
-    with connect() as db:
-        db.execute("UPDATE interviews SET status='active',started=COALESCE(started,?) WHERE id=?", (time.time(), iid))
+    with database.session(write=True, interview_id=iid) as db:
+        record = db.get(Interview, iid)
+        if record.status != 'invited':
+            raise HTTPException(409, 'Interview already started')
+        record.status = 'active'
+        record.started = record.started if record.started is not None else time.time()
     return {'status': 'active'}
 
 class Answer(BaseModel):
@@ -189,24 +165,26 @@ async def save_answer(iid: str, body: Answer, x_interview_token: str | None = He
     active(row)
     if not body.text.strip():
         raise HTTPException(422, 'Ответ не должен быть пустым')
-    with connect() as db:
-        existing = db.execute('SELECT * FROM answers WHERE interview_id=? AND question_id=?', (iid, body.question_id)).fetchone()
-        count = db.execute('SELECT count(*) FROM answers WHERE interview_id=?', (iid,)).fetchone()[0]
-        if existing and existing['text'] != body.text:
+    with database.session(write=True, interview_id=iid) as db:
+        active(as_dict(db.get(Interview, iid)))
+        existing = db.get(AnswerRecord, (iid, body.question_id))
+        count = database.count(db, AnswerRecord, iid)
+        if existing and existing.text != body.text:
             raise HTTPException(409, 'Этот ответ уже сохранён')
         if not existing and (count >= len(QUESTIONS) or QUESTIONS[count]['id'] != body.question_id):
             raise HTTPException(409, 'Сначала ответьте на текущий вопрос')
-        if existing and existing['evaluation']:
-            return {'saved': True, 'evaluation': json.loads(existing['evaluation'])}
-        db.execute('INSERT OR IGNORE INTO answers(interview_id,question_id,text,created) VALUES(?,?,?,?)',
-                   (iid, body.question_id, body.text, time.time()))
+        if existing and existing.evaluation:
+            return {'saved': True, 'evaluation': json.loads(existing.evaluation)}
+        if not existing:
+            db.add(AnswerRecord(interview_id=iid, question_id=body.question_id, text=body.text, created=time.time()))
     result = None
     if row['mode'] == 'live':
         question = next(q['text'] for q in details(row)['questions'] if q['id'] == body.question_id)
         result = await evaluate(question, body.text)
-        with connect() as db:
-            db.execute('UPDATE answers SET evaluation=?,next_question=? WHERE interview_id=? AND question_id=?',
-                       (json.dumps(result, ensure_ascii=False), result['follow_up'] if body.question_id == 'coding' else None, iid, body.question_id))
+        with database.session(write=True, interview_id=iid) as db:
+            record = db.get(AnswerRecord, (iid, body.question_id))
+            record.evaluation = json.dumps(result, ensure_ascii=False)
+            record.next_question = result['follow_up'] if body.question_id == 'coding' else None
     return {'saved': True, 'evaluation': result}
 
 class Event(BaseModel):
@@ -218,9 +196,10 @@ class Event(BaseModel):
 @app.post('/api/interviews/{iid}/events')
 def event(iid: str, body: Event, x_interview_token: str | None = Header(None)):
     active(candidate(iid, x_interview_token))
-    with connect() as db:
-        db.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?)',
-                   (body.id, iid, body.kind, body.elapsed, body.detail, time.time()))
+    with database.session(write=True, interview_id=iid) as db:
+        active(as_dict(db.get(Interview, iid)))
+        if not db.get(IntegrityEvent, (iid, body.id)):
+            db.add(IntegrityEvent(id=body.id, interview_id=iid, kind=body.kind, elapsed=body.elapsed, detail=body.detail, created=time.time()))
     return {'saved': True}
 
 @app.put('/api/interviews/{iid}/recording/{seq}')
@@ -242,17 +221,19 @@ async def upload_chunk(iid: str, seq: int, request: Request, x_interview_token: 
     digest = hashlib.sha256(payload).hexdigest()
     folder = DATA / 'recordings' / iid
     folder.mkdir(parents=True, exist_ok=True)
-    with connect() as db:
-        db.execute('BEGIN IMMEDIATE')
-        old = db.execute('SELECT digest FROM chunks WHERE interview_id=? AND seq=?', (iid, seq)).fetchone()
+    with database.session(write=True, interview_id=iid) as db:
+        record = db.get(Interview, iid)
+        if record.expected_chunks is not None and seq >= record.expected_chunks:
+            raise HTTPException(409, 'Chunk outside recording')
+        old = db.get(RecordingChunk, (iid, seq))
         if old:
-            if old['digest'] != digest:
+            if old.digest != digest:
                 raise HTTPException(409, 'Фрагмент с этим номером уже существует')
         else:
-            if row['recording_complete']:
+            if record.recording_complete:
                 raise HTTPException(409, 'Запись уже закрыта')
             (folder / f'{seq:05}.webm').write_bytes(payload)
-            db.execute('INSERT INTO chunks VALUES(?,?,?,?)', (iid, seq, digest, len(payload)))
+            db.add(RecordingChunk(interview_id=iid, seq=seq, digest=digest, size=len(payload)))
     return {'saved': True, 'seq': seq}
 
 class Finish(BaseModel):
@@ -265,18 +246,22 @@ def finish(iid: str, body: Finish, x_interview_token: str | None = Header(None))
         raise HTTPException(409, 'Интервью не начато')
     if row['expected_chunks'] is not None and row['expected_chunks'] != body.expected_chunks:
         raise HTTPException(409, 'Количество фрагментов уже зафиксировано')
-    with connect() as db:
-        seqs = [r[0] for r in db.execute('SELECT seq FROM chunks WHERE interview_id=? ORDER BY seq', (iid,))]
-    complete = body.expected_chunks > 0 and seqs == list(range(body.expected_chunks))
-    if complete:
-        folder = DATA / 'recordings' / iid
-        target = folder / 'interview.webm'
-        with target.open('wb') as output:
-            for seq in seqs:
-                output.write((folder / f'{seq:05}.webm').read_bytes())
-    with connect() as db:
-        db.execute("UPDATE interviews SET status='completed',completed=COALESCE(completed,?),expected_chunks=?,recording_complete=? WHERE id=?",
-                   (time.time(), body.expected_chunks, int(complete), iid))
+    with database.session(write=True, interview_id=iid) as db:
+        record = db.get(Interview, iid)
+        if record.expected_chunks is not None and record.expected_chunks != body.expected_chunks:
+            raise HTTPException(409, 'Recording length already fixed')
+        seqs = list(db.scalars(select(RecordingChunk.seq).where(RecordingChunk.interview_id == iid).order_by(RecordingChunk.seq)))
+        complete = body.expected_chunks > 0 and seqs == list(range(body.expected_chunks))
+        if complete:
+            folder = DATA / 'recordings' / iid
+            target = folder / 'interview.webm'
+            with target.open('wb') as output:
+                for seq in seqs:
+                    output.write((folder / f'{seq:05}.webm').read_bytes())
+        record.status = 'completed'
+        record.completed = record.completed if record.completed is not None else time.time()
+        record.expected_chunks = body.expected_chunks
+        record.recording_complete = int(complete)
     return {'status': 'completed', 'recording_complete': complete, 'uploaded_chunks': len(seqs)}
 
 @app.get('/api/company/interviews/{iid}/recording')
