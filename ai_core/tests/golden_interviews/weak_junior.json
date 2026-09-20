@@ -1,0 +1,12 @@
+{
+  "name": "weak_junior",
+  "question": "Что произойдёт с event loop при обычных CPU-bound вычислениях внутри coroutine?",
+  "candidate_answer": "Это задержит другие запросы, но как перенести вычисления, не знаю.",
+  "scripted_evaluation": {
+    "correctness": "partial", "depth": "low",
+    "demonstrated_concepts": ["blocking"], "missing_concepts": ["process executor"], "misconceptions": [],
+    "evidence": [{"type":"positive","claim":"Заметил задержку других запросов","quote":"Это задержит другие запросы"},{"type":"uncertain","claim":"Не предложил способ переноса работы","quote":"как перенести вычисления, не знаю"}],
+    "follow_up_required": true, "follow_up_goal":"Проверить, чем отличаются отдельный поток и процесс для Python-вычислений", "recommended_difficulty": 2
+  },
+  "expected_action": "FOLLOW_UP", "expected_evidence_type": "uncertain"
+}

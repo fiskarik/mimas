@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from backend.database import Database, Interview, AnswerRecord, IntegrityEvent, RecordingChunk, as_dict
+from backend.ai_web import register_ai_routes
 
 DATA = Path(os.getenv('DATA_DIR', Path(__file__).resolve().parents[1] / 'data'))
 DATA.mkdir(parents=True, exist_ok=True)
@@ -33,6 +34,8 @@ QUESTIONS = [
 def company(key):
     if not key or not secrets.compare_digest(key, COMPANY_KEY):
         raise HTTPException(401, 'Неверный ключ работодателя')
+
+register_ai_routes(app, database, company)
 
 def get_interview(interview_id):
     with database.session() as db:

@@ -1,0 +1,12 @@
+{
+  "name": "strong_middle",
+  "question": "Что произойдёт с event loop при обычных CPU-bound вычислениях внутри coroutine?",
+  "candidate_answer": "Цикл без await блокирует поток event loop. Остальные задачи не продвигаются. CPU-bound работу можно вынести в ProcessPoolExecutor, учитывая сериализацию и стоимость передачи данных.",
+  "scripted_evaluation": {
+    "correctness": "correct", "depth": "high",
+    "demonstrated_concepts": ["event loop", "CPU bound", "process isolation"], "missing_concepts": [], "misconceptions": [],
+    "evidence": [{"type":"positive","claim":"Объяснил блокировку event loop","quote":"Цикл без await блокирует поток event loop"},{"type":"positive","claim":"Назвал отдельный процесс и издержки передачи","quote":"ProcessPoolExecutor, учитывая сериализацию и стоимость передачи данных"}],
+    "follow_up_required": false, "recommended_difficulty": 4
+  },
+  "expected_action": "NEXT_QUESTION", "expected_evidence_type": "positive"
+}

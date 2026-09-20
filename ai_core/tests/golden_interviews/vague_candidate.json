@@ -1,0 +1,12 @@
+{
+  "name": "vague_candidate",
+  "question": "Что произойдёт с event loop при обычных CPU-bound вычислениях внутри coroutine?",
+  "candidate_answer": "Там всё работает асинхронно, это современный подход.",
+  "scripted_evaluation": {
+    "correctness": "insufficient_evidence", "depth": "low",
+    "demonstrated_concepts": [], "missing_concepts": ["blocking CPU work"], "misconceptions": [],
+    "evidence": [{"type":"uncertain","claim":"Не объяснил механизм переключения задач","quote":"Там всё работает асинхронно"}],
+    "follow_up_required": true, "follow_up_goal":"Проверить поведение соседней coroutine при цикле без await", "recommended_difficulty": 2
+  },
+  "expected_action": "FOLLOW_UP", "expected_evidence_type": "uncertain"
+}

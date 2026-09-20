@@ -1,0 +1,14 @@
+{
+  "name": "asyncio_misconception",
+  "question": "Что произойдёт с event loop при обычных CPU-bound вычислениях внутри coroutine?",
+  "candidate_answer": "asyncio автоматически запускает вычисления на нескольких ядрах.",
+  "scripted_evaluation": {
+    "correctness": "incorrect", "depth": "low",
+    "demonstrated_concepts": [], "missing_concepts": ["cooperative scheduling"],
+    "misconceptions": [{"claim":"asyncio автоматически распределяет CPU-вычисления между ядрами","quote":"asyncio автоматически запускает вычисления на нескольких ядрах"}],
+    "evidence": [{"type":"negative","claim":"Ошибочно приписывает asyncio автоматический CPU-параллелизм","quote":"asyncio автоматически запускает вычисления на нескольких ядрах"}],
+    "follow_up_required": true, "follow_up_goal":"Проверить, может ли coroutine без await отдать управление event loop", "recommended_difficulty": 2
+  },
+  "expected_action": "VERIFICATION",
+  "expected_evidence_type": "negative"
+}
