@@ -40,3 +40,13 @@ reasoning suffice unless assessment_scope specifically requires exact measuremen
 Do not claim code is both correct and faulty for the same assertion. If append_item('a')
 returns ['a'], assert list == [] is wrong; an identity check can still be correct.
 When a quote is long, choose a shorter exact substring instead of rewriting it.'''
+SYSTEM += '''
+For verification_target or misconception_to_verify, assess that specific target:
+resolved requires a correct substantive explanation supported by current positive evidence;
+confirmed requires an explicit incorrect assertion supported by negative evidence;
+otherwise uncertain. A paste or focus event is NEVER evidence of incorrect knowledge or
+use of outside assistance. Do not penalize it. A misconception follow-up may also resolve
+the supplied misconception. Identify contradictions only between explicit technical claims
+in current and previous answers: provide both exact quotes and previous_question_id.
+An omission, change of topic, refusal, or corrected prior mistake is not itself a contradiction.
+Return an empty contradictions list when no grounded contradiction exists.'''

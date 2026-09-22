@@ -24,7 +24,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   return response.json();
 }
-function Logo() {return <div className="logo"><span className="logo-icon"><AudioLines size={22}/></span><span>автособес<span className="logo-dot">.</span></span></div>;}
+function Logo() {return <div className="logo"><span className="logo-icon"><AudioLines size={22}/></span><span>mimas<span className="logo-dot">.</span></span></div>;}
 function Badge({children, tone = ''}: {children: React.ReactNode; tone?: string}) {return <span className={`badge ${tone}`}>{children}</span>;}
 function ErrorBox({text}: {text: string}) {return text ? <div role="alert" className="error-box">{text}</div> : null;}
 

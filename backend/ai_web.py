@@ -7,7 +7,6 @@ import time
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field
 from sqlalchemy import Float, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,8 +14,11 @@ from backend.database import Base, Database
 from ai_core.interview.engine import InterviewEngine
 from ai_core.interview.schemas import CandidateAnswer
 from ai_core.interview.state import InterviewState, Phase
-from ai_core.llm.config import configured_groq
-from ai_core.reports.generator import generate_report
+from ai_core.llm.factory import create_llm_provider, llm_readiness
+from ai_core.llm.base import ProviderError
+from fastapi.responses import JSONResponse
+from backend.ai_presenter import session_view as view
+from ai_core.interview.events import RuntimeEvent
 
 
 class AISession(Base):
@@ -31,6 +33,14 @@ class AISession(Base):
 
 
 def register_ai_routes(app: FastAPI, database: Database, authorize_company):
+    @app.exception_handler(ProviderError)
+    async def llm_error(request, exc):
+        return JSONResponse(status_code=503, content={'detail':'AI временно недоступен. Состояние сохранено; повторите обработку.', 'code':exc.code})
+
+    @app.get('/api/ai/health')
+    async def ai_health():
+        return llm_readiness()
+
     # Fixed lock pool avoids accumulating locks per session. Deployment is one worker.
     locks = [asyncio.Lock() for _ in range(32)]
 
@@ -45,15 +55,21 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         return row
 
     def restore(row: AISession) -> InterviewEngine:
+        state = InterviewState.model_validate_json(row.state)
         try:
-            provider = configured_groq()
-        except ValueError:
-            raise HTTPException(503, 'Добавьте GROQ_API_KEY в локальный .env.') from None
+            # Legacy sessions predate provider selection and were always Groq.
+            provider = create_llm_provider(provider=state.llm_provider or 'groq', model=row.model)
+        except ValueError as exc:
+            raise HTTPException(503, str(exc)) from None
         provider.model = row.model
-        engine = InterviewEngine(provider, clock=time.time)
-        engine.state = InterviewState.model_validate_json(row.state)
+        engine = InterviewEngine(provider, config=state.config, limits=state.limits,
+                                 plan=state.plan_snapshot, clock=time.time)
+        engine.state = state
+        engine.state.interview_id = row.id
+        engine.limits = engine.state.limits
         engine.started = row.started
         engine.trace = json.loads(row.trace)
+        engine.checkpoint_sink = lambda current: save(row, current)
         return engine
 
     def save(row: AISession, engine: InterviewEngine, pending: str | None = None):
@@ -61,33 +77,24 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             stored = db.get(AISession, row.id)
             stored.state = engine.state.model_dump_json()
             stored.trace = json.dumps(engine.trace, ensure_ascii=False)
-            stored.pending = pending
-
-    def view(row: AISession) -> dict:
-        state = InterviewState.model_validate_json(row.state)
-        completed = state.phase == Phase.COMPLETED
-        last = state.turns[-1] if state.turns else None
-        return {'id': row.id, 'model': row.model, 'phase': state.phase,
-                'questions': [q.model_dump(mode='json') for q in state.questions],
-                'answers': [t.answer.model_dump(mode='json') for t in state.turns],
-                'current_question': state.questions[-1].model_dump(mode='json') if state.phase == Phase.WAITING_FOR_ANSWER else None,
-                'pending_answer': json.loads(row.pending) if row.pending else None,
-                'max_questions': 20,
-                'evaluation_notice': ('Ответ сохранён, но AI не смог его оценить. Причина: ' +
-                                      ', '.join(last.evaluation.failures)) if last and last.evaluation.status == 'unavailable' else None,
-                'report': generate_report(state, mode='live') if completed else None}
+            stored.pending = pending or (engine.state.pending_answer.model_dump_json() if engine.state.pending_answer else None)
+            if engine.started is not None:
+                stored.started = engine.started
 
     @app.post('/api/ai/sessions')
     async def create_ai_session(x_company_key: str | None = Header(None)):
         authorize_company(x_company_key)
         try:
-            provider = configured_groq()
-        except ValueError:
-            raise HTTPException(503, 'Для AI-интервью добавьте GROQ_API_KEY в локальный .env.') from None
+            provider = create_llm_provider()
+        except ValueError as exc:
+            raise HTTPException(503, str(exc)) from None
         engine = InterviewEngine(provider, clock=time.time)
+        engine.state.llm_provider = getattr(provider, 'name', 'groq')
         token = secrets.token_urlsafe(32)
         row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(token.encode()).hexdigest(),
                         model=provider.model, started=time.time(), state=engine.state.model_dump_json(), trace='[]')
+        engine.state.interview_id = row.id
+        row.state = engine.state.model_dump_json()
         with database.session(write=True) as db:
             db.add(row)
         return {'id': row.id, 'token': token}
@@ -102,9 +109,13 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             row = load(iid, x_interview_token)
             if InterviewState.model_validate_json(row.state).phase == Phase.CREATED:
                 engine = restore(row)
-                await engine.start()
+                await engine.handle(RuntimeEvent(type='INTERVIEW_STARTED'))
                 with database.session(write=True) as db:
                     db.get(AISession, iid).started = engine.started
+                save(row, engine)
+            elif InterviewState.model_validate_json(row.state).phase not in (Phase.WAITING_FOR_ANSWER, Phase.COMPLETED):
+                engine = restore(row)
+                await engine.resume()
                 save(row, engine)
             return view(load(iid, x_interview_token))
 
@@ -117,7 +128,18 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             if existing:
                 if existing.answer.text != body.text:
                     raise HTTPException(409, 'Ответ уже сохранён и не может быть изменён.')
-                return view(row)
+                if state.phase not in (Phase.WAITING_FOR_ANSWER, Phase.COMPLETED):
+                    engine = restore(row)
+                    await engine.resume()
+                    save(row, engine)
+                return view(load(iid, x_interview_token))
+            if state.pending_answer:
+                if state.pending_answer != body:
+                    raise HTTPException(409, 'Повторите обработку сохранённого ответа.')
+                engine = restore(row)
+                await engine.resume()
+                save(row, engine)
+                return view(load(iid, x_interview_token))
             if state.phase != Phase.WAITING_FOR_ANSWER or state.questions[-1].id != body.question_id:
                 raise HTTPException(409, 'Сначала ответьте на текущий вопрос.')
             if row.pending and CandidateAnswer.model_validate_json(row.pending) != body:
@@ -125,9 +147,22 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             engine = restore(row)
             # Commit before network I/O; retries after disconnection/restart use this answer.
             save(row, engine, body.model_dump_json())
-            await engine.submit(body.question_id, body.text)
+            await engine.handle(RuntimeEvent(type='ANSWER_SUBMITTED', question_id=body.question_id), body.text)
             save(row, engine)
             return view(load(iid, x_interview_token))
+
+    @app.post('/api/ai/sessions/{iid}/events')
+    async def runtime_event(iid: str, body: RuntimeEvent, x_interview_token: str | None = Header(None)):
+        if body.type not in ('PASTE_DETECTED', 'COPY_DETECTED', 'FOCUS_LOST', 'FOCUS_RETURNED'):
+            raise HTTPException(422, 'Это событие не поддерживается данным endpoint.')
+        async with lock_for(iid):
+            row = load(iid, x_interview_token)
+            engine = restore(row)
+            try:
+                outcome = await engine.handle(body)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from None
+            return {'accepted': True, 'event_id': body.id, **(outcome or {})}
 
     @app.post('/api/ai/sessions/{iid}/finish')
     async def finish_ai_session(iid: str, x_interview_token: str | None = Header(None)):
@@ -140,6 +175,8 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 raise HTTPException(409, 'Сначала начните интервью.')
             if state.phase != Phase.COMPLETED:
                 engine = restore(row)
-                engine.complete()
+                if state.phase != Phase.WAITING_FOR_ANSWER:
+                    raise HTTPException(409, 'Сначала продолжите обработку интервью.')
+                await engine.handle(RuntimeEvent(type='INTERVIEW_FINISH_REQUESTED'))
                 save(row, engine)
             return view(load(iid, x_interview_token))

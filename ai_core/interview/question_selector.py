@@ -33,15 +33,20 @@ class QuestionGenerator:
 
     async def generate(self, spec: QuestionSpec, competency: Competency, level: Level,
                        history: list[Question], evidence: list[dict], misconceptions: list[dict],
-                       primary_index: int) -> Question:
+                       primary_index: int, context: dict | None = None) -> Question:
         payload = {'spec': spec.model_dump(mode='json'), 'target_level': level.value,
                    'reference_question': competency.questions[primary_index % len(competency.questions)],
                    'previous_questions': [q.text for q in history if q.skill == spec.skill],
                    'known_evidence': evidence, 'known_misconceptions': misconceptions}
+        payload['runtime_context'] = context or {}
+        operation = ('verification' if spec.action in ('VERIFY_INTEGRITY', 'VERIFY_KNOWLEDGE')
+                     else 'follow_up' if spec.parent_id else 'question')
+        if spec.parent_id:
+            payload['reference_question'] = spec.goal
         for attempt in range(1, 3):
             try:
                 raw = await self.provider.generate(system=SYSTEM, payload=payload,
-                                                   schema=GeneratedQuestion.model_json_schema())
+                                                   schema=GeneratedQuestion.model_json_schema(), operation=operation)
                 generated = GeneratedQuestion.model_validate_json(raw)
                 if len(generated.text) > 600 or generated.text.count('?') > 1 or re.search(r'(?m)^\s*\d+[.)]\s', generated.text):
                     raise ValueError('Question must be short and single-purpose')
@@ -49,9 +54,13 @@ class QuestionGenerator:
                     raise ValueError('Repeated question')
                 return Question(**spec.model_dump(), text=generated.text)
             except (ProviderError, ValueError) as exc:
+                if isinstance(exc, ProviderError) and exc.retryable:
+                    raise
                 payload['retry_feedback'] = 'Use one short question, no list, at most 600 characters; stay within the goal.'
                 log.warning('question_generation_failed skill=%s attempt=%s error=%s',
                             spec.skill, attempt, type(exc).__name__)
+                if isinstance(exc, ProviderError) and exc.exhausted:
+                    break
         if spec.parent_id:
             text = f'{spec.goal[:350]} — объясните на одном коротком примере.'
         else:

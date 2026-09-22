@@ -8,7 +8,7 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-echo Starting Autosobes...
+echo Starting mimas...
 echo Open http://localhost:3000
 echo Company key: demo-company
 echo Close this window or press Ctrl+C to stop.

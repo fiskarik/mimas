@@ -8,5 +8,5 @@
     "evidence": [{"type":"positive","claim":"Объяснил блокировку event loop","quote":"Цикл без await блокирует поток event loop"},{"type":"positive","claim":"Назвал отдельный процесс и издержки передачи","quote":"ProcessPoolExecutor, учитывая сериализацию и стоимость передачи данных"}],
     "follow_up_required": false, "recommended_difficulty": 4
   },
-  "expected_action": "NEXT_QUESTION", "expected_evidence_type": "positive"
+  "expected_action": "ASK_QUESTION", "expected_evidence_type": "positive"
 }

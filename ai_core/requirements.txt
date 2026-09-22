@@ -1,3 +1,4 @@
 # Minimal CLI dependencies, matching the existing demo lock file.
 httpx==0.28.1
 pydantic==2.13.5
+google-genai==2.24.0

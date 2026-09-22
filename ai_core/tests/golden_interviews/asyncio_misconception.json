@@ -9,6 +9,6 @@
     "evidence": [{"type":"negative","claim":"Ошибочно приписывает asyncio автоматический CPU-параллелизм","quote":"asyncio автоматически запускает вычисления на нескольких ядрах"}],
     "follow_up_required": true, "follow_up_goal":"Проверить, может ли coroutine без await отдать управление event loop", "recommended_difficulty": 2
   },
-  "expected_action": "VERIFICATION",
+  "expected_action": "FOLLOW_UP",
   "expected_evidence_type": "negative"
 }

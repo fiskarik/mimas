@@ -16,7 +16,15 @@ class MisconceptionDraft(Model):
     quote: Text
 
 
+class ContradictionDraft(Model):
+    previous_question_id: Text
+    previous_quote: Text
+    quote: Text
+    claim: Text
+
+
 class EvaluationResult(Model):
+    contradictions: list[ContradictionDraft] = Field(default_factory=list, max_length=3)
     response_kind: Literal['substantive', 'no_answer', 'off_topic'] = 'substantive'
     correctness: Literal['correct', 'partial', 'incorrect', 'insufficient_evidence']
     depth: Literal['low', 'medium', 'high']
@@ -47,6 +55,8 @@ class EvaluationResult(Model):
 
 
 class EvaluationAttempt(Model):
+    provider: str | None = None
+    model: str | None = None
     result: EvaluationResult | None = None
     status: Literal['evaluated', 'unavailable']
     attempts: int = Field(ge=1, le=2)

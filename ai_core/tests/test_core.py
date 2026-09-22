@@ -85,7 +85,7 @@ def test_verification_resolves_only_targeted_misconception():
         engine = InterviewEngine(fake, limits=Limits(max_questions=2))
         q = await engine.start()
         follow_up = await engine.submit(q.id, 'automatic parallelism')
-        assert follow_up.type == 'verification'
+        assert follow_up.type == 'follow_up'
         assert follow_up.parent_id == q.id
         misconception = engine.state.skills[0].misconceptions[0]
         assert follow_up.misconception_id == misconception.id
@@ -94,7 +94,7 @@ def test_verification_resolves_only_targeted_misconception():
         assert misconception.status == 'resolved'
         assert misconception.verification_question_id == follow_up.id
         assert len(engine.state.skills[0].evidence) == 2
-        assert any(e['event'] == 'decision' and e['action'] == 'VERIFICATION' for e in engine.trace)
+        assert any(e['event'] == 'decision' and e['action'] == 'FOLLOW_UP' for e in engine.trace)
     asyncio.run(scenario())
 
 

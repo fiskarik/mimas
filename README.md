@@ -1,4 +1,4 @@
-# Автособес — каркас локального демо
+# mimas — каркас локального демо
 
 ## Новый приоритет: MIMAS AI Core
 
@@ -9,13 +9,36 @@
 Старый сценарий с видеозаписью по приглашению сохранён отдельно.
 
 Запуск без ключа: `.venv\Scripts\python.exe -m cli.main`.
-Это просмотр сценария без AI-оценок. Для настроенного Groq: добавьте `--live`.
-Для подключения создайте ключ на https://console.groq.com/keys и внесите его
-в `GROQ_API_KEY` локального `.env` (не отправляйте ключ в Git или чат).
-Проверка: `.venv\Scripts\python.exe -m cli.main --check-groq`.
+Это просмотр сценария без AI-оценок. Для настроенного AI-провайдера добавьте `--live`.
+Проверка выбранного провайдера: `.venv\Scripts\python.exe -m cli.main --check-llm`.
 Запуск AI-интервью двойным щелчком: `start_ai.bat`.
 Отчёт и трассировка сохраняются в `data/ai-core/`.
 Архитектура, ограничения и проверки: [docs/ai-core.md](docs/ai-core.md).
+
+## AI Provider
+
+Основной провайдер нового Runtime — Gemini через официальный Python SDK `google-genai`.
+Настройки в локальном `.env` (ключ не отправлять в Git или чат):
+
+```dotenv
+MIMAS_LLM_PROVIDER=gemini
+GEMINI_API_KEY=your_key
+MIMAS_GEMINI_MODEL=gemini-3.8-flash
+```
+
+Установка: `.venv\Scripts\python.exe -m pip install -r backend/requirements.lock.txt`.
+Запуск сайта: `start_demo.bat`, затем открыть `http://localhost:3000/?view=ai`.
+Обычные вопросы используют thinking=low, follow-up/evaluation/verification=medium.
+Все уровни настраиваются через `.env.example`; high зарезервирован для code review.
+
+Для ручного возврата к Groq: `MIMAS_LLM_PROVIDER=groq`, `GROQ_API_KEY` и `GROQ_MODEL`,
+затем перезапуск и новая сессия. Старые сессии продолжаются со своим провайдером/моделью.
+Команда `--check-groq` сохранена. `/api/ai/health` проверяет только конфигурацию;
+реальный запрос выполняется явно через `--check-llm`.
+
+Structured Outputs, retries, usage-метрики и границы миграции:
+[docs/gemini-provider.md](docs/gemini-provider.md).
+Камера, STT и AI_MODE старого демо описаны ниже и в этой миграции не менялись.
 
 ## Существующее веб-демо
 

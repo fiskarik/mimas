@@ -1,4 +1,4 @@
-"""Local-only Autosobes demo API. No untrusted Python is executed here."""
+"""Local-only mimas demo API. No untrusted Python is executed here."""
 import hashlib
 import json
 import os
@@ -15,13 +15,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from backend.database import Database, Interview, AnswerRecord, IntegrityEvent, RecordingChunk, as_dict
 from backend.ai_web import register_ai_routes
+from ai_core.llm.factory import llm_readiness
 
 DATA = Path(os.getenv('DATA_DIR', Path(__file__).resolve().parents[1] / 'data'))
 DATA.mkdir(parents=True, exist_ok=True)
 DB = DATA / 'demo.sqlite3'
 database = Database(DB, os.getenv('DATABASE_URL'))
 COMPANY_KEY = os.getenv('COMPANY_KEY', 'demo-company')
-app = FastAPI(title='Autosobes demo', version='0.1.0')
+app = FastAPI(title='mimas demo', version='0.1.0')
 
 QUESTIONS = [
     {'id': 'python', 'skill': 'Python', 'text': 'Почему изменяемый аргумент по умолчанию, например items=[], может привести к ошибкам? Как это исправить?'},
@@ -65,7 +66,7 @@ def configuration():
 
 @app.get('/api/health')
 def health():
-    return {'status': 'ok', **configuration()}
+    return {'status': 'ok', **configuration(), 'runtime_llm':llm_readiness()}
 
 class Invite(BaseModel):
     name: str = Field(min_length=1, max_length=100)

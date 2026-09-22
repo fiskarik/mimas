@@ -16,10 +16,13 @@ class Limits(Model):
     max_questions_per_skill: int = Field(default=4, ge=1, le=10)
     max_follow_ups_per_question: int = Field(default=2, ge=0, le=3)
     minimum_evidence_per_skill: int = Field(default=2, ge=1, le=5)
+    no_answer_primary_limit: int = Field(default=2, ge=1, le=5)
     time_budget_seconds: int = Field(default=1800, ge=1, le=3600)
 
 
 class QuestionSpec(Model):
+    action: str = 'ASK_QUESTION'
+    verification_id: str | None = None
     skill: Text
     difficulty: int = Field(ge=1, le=5)
     type: QuestionType

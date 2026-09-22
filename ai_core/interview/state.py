@@ -6,6 +6,11 @@ from ai_core.evaluation.schemas import EvaluationAttempt
 from ai_core.evidence.models import Misconception, SkillEvidence
 from ai_core.interview.schemas import CandidateAnswer, InterviewInput, Question
 from ai_core.models import Level, Model
+from ai_core.interview.events import RuntimeEvent, IntegritySignal, IntegrityPolicy, Verification, Contradiction, utcnow
+from ai_core.interview.schemas import Limits, QuestionSpec
+from datetime import datetime
+from uuid import uuid4
+from ai_core.interview.planner import CompetencyPlan
 
 
 class Phase(StrEnum):
@@ -32,6 +37,9 @@ class SkillState(Model):
     evidence: list[SkillEvidence] = Field(default_factory=list)
     misconceptions: list[Misconception] = Field(default_factory=list)
     completed: bool = False
+    status: str = 'NOT_STARTED'
+    current_level: Level | None = None
+    confidence: float = 0.0
 
 
 class Turn(Model):
@@ -41,6 +49,21 @@ class Turn(Model):
 
 
 class InterviewState(Model):
+    llm_provider: str | None = None
+    plan_snapshot: CompetencyPlan | None = None
+    events_truncated: bool = False
+    interview_id: str = Field(default_factory=lambda: uuid4().hex)
+    started_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utcnow)
+    limits: Limits = Field(default_factory=Limits)
+    integrity_policy: IntegrityPolicy = Field(default_factory=IntegrityPolicy)
+    events: list[RuntimeEvent] = Field(default_factory=list)
+    integrity_signals: list[IntegritySignal] = Field(default_factory=list)
+    verification_history: list[Verification] = Field(default_factory=list)
+    contradictions: list[Contradiction] = Field(default_factory=list)
+    pending_answer: CandidateAnswer | None = None
+    pending_spec: QuestionSpec | None = None
+    next_action: dict | None = None
     config: InterviewInput
     phase: Phase = Phase.CREATED
     skill_index: int = 0
