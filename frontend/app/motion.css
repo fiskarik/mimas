@@ -1,0 +1,141 @@
+/* mimas: native motion diagrams and locally hosted video assets. */
+.brand-word { letter-spacing: -.07em; }
+.landing-nav > .brand-word { font-size: 37px; }
+.motion-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 11px; border: 1px solid #c4dac842; border-radius: 20px; background: #071b1930; color: #d4e8d5; font: 9px/1.4 Arial, sans-serif; letter-spacing: .2px; }
+.motion-toggle:hover:not(:disabled) { background: #d0e3d21a; }
+.hero-topline { align-items: center; gap: 18px; }
+.hero-topline .motion-toggle { flex-shrink: 0; }
+.neural-orb { overflow: hidden; aspect-ratio: 1; border-radius: 50%; background: #010302; isolation: isolate; filter: none; box-shadow: 0 0 0 1px #a7c4b62b, 0 12px 38px #092b1b12; }
+.neural-orb video { display: block; width: 100%; height: 100%; object-fit: cover; transition: opacity .45s; }
+.neural-orb::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 25px 10px #000; pointer-events: none; }
+.neural-orb.orb-speaking { box-shadow: 0 0 0 1px #a7c4b65c, 0 0 22px #b6eac526; }
+.neural-orb.orb-listening { box-shadow: 0 0 0 2px #9fceb8; }
+.neural-orb.orb-thinking video { opacity: .8; }
+.neural-orb.orb-saved { filter: none; box-shadow: 0 0 0 2px #75c79b, 0 0 20px #75c79b25; }
+.preview-agent .neural-orb { max-width: 230px; margin: 25px auto 24px; }
+.ai-demo-heading .neural-orb { width: 100px; }
+.heading-mark > .neural-orb { width: 110px; }
+.agent-status .neural-orb { width: 64px; }
+
+.intelligence-section { padding: 82px max(5.4%, calc((100vw - 1498px)/2)) 34px; background: #101311; color: #f3f5ec; }
+.intelligence-heading { display: grid; grid-template-columns: 1fr 1.9fr 1fr; gap: 35px; align-items: start; margin-bottom: 54px; }
+.intelligence-heading .small-kicker { color: #a4b1a5; padding-top: 8px; font-size: 9px; }
+.intelligence-heading .small-kicker > span { background: #c3f6d6; border-radius: 0; width: 5px; height: 5px; }
+.landing .intelligence-heading h2 { font-size: clamp(32px, 3.2vw, 48px); line-height: 1.15; letter-spacing: -1.8px; margin: 0; }
+.intelligence-heading h2 > span { color: #94ac97; }
+.intelligence-heading > p { color: #a5b3a5; font-size: 13px; line-height: 1.8; padding-top: 6px; margin: 0; }
+.intelligence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.intelligence-card { min-width: 0; }
+.motion-scene { position: relative; overflow: clip; isolation: isolate; height: 380px; border: 1px solid #ffffff14; border-radius: 5px; background: #0b0e0c; }
+.scene-grid { position: absolute; z-index: -1; inset: 0; background-image: linear-gradient(#a3b39e13 1px, transparent 1px), linear-gradient(90deg, #a3b39e13 1px, transparent 1px); background-size: 40px 40px; mask-image: radial-gradient(ellipse at center, #000 28%, transparent 77%); }
+.scene-meta { position: absolute; top: 22px; left: 23px; right: 23px; display: flex; justify-content: space-between; gap: 15px; font: 7px/1.5 Consolas, monospace; letter-spacing: 1px; color: #85968a; z-index: 2; }
+.scene-live { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.scene-live i { width: 4px; height: 4px; border-radius: 50%; background: #a2edbe; box-shadow: 0 0 7px #9cecaf55; }
+.neural-mark { position: absolute; left: 50%; top: 47%; width: 250px; height: 217px; transform: translate(-50%, -50%); color: #f0f4ed; }
+.neural-node, .neural-spark { transform-box: fill-box; transform-origin: center; animation: node-breathe 6s ease-in-out infinite; }
+.node-1, .node-3, .node-7 { animation-delay: -2s; }
+.node-4, .node-6 { animation-delay: -4s; }
+.neural-link { opacity: .93; }
+.neural-spark { animation: spark-travel 6s ease-in-out infinite; }
+.scene-pointer { position: absolute; z-index: 3; }
+.scene-pointer > svg { width: 30px; height: 37px; display: block; filter: drop-shadow(0 3px 4px #0008); }
+.scene-pointer > span { display: flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 5px; margin: -3px 0 0 21px; white-space: nowrap; color: #17251a; background: currentColor; font-size: 11px; line-height: 1.3; box-shadow: 0 3px 9px #0003; }
+.scene-pointer > span > i { width: 7px; height: 7px; border: 1px solid currentColor; transform: rotate(45deg); }
+.pointer-human { color: #fa865c; left: 24%; top: 59%; animation: cursor-human 10s ease-in-out infinite; }
+.pointer-human > span { background: #fa865c; color: #2d1d13; }
+.pointer-agent { color: #a8f7c2; left: 68%; top: 44%; animation: cursor-agent 10s ease-in-out infinite; }
+.pointer-agent > span { background: #a8f7c2; color: #133520; }
+.scene-code { position: absolute; left: 24px; bottom: 23px; color: #677b6c; display: flex; align-items: center; gap: 9px; font: 8px Consolas, monospace; letter-spacing: .3px; }
+.intelligence-caption { display: flex; align-items: flex-start; gap: 17px; padding: 25px 2px 32px; min-height: 150px; }
+.scene-number { padding-top: 5px; color: #738978; font: 10px Consolas, monospace; }
+.intelligence-caption h3 { font-size: 22px; letter-spacing: -.65px; line-height: 1.3; font-weight: 400; margin: 0 0 11px; }
+.intelligence-caption p { color: #98a99b; font-size: 12px; line-height: 1.85; max-width: 390px; margin: 0; }
+.intelligence-caption > svg { color: #adc8ae; margin: 4px 0 0 auto; flex-shrink: 0; }
+.iso-grid { position: absolute; inset: -60%; z-index: -1; background-image: linear-gradient(#a3b39e1a 1px, transparent 1px), linear-gradient(90deg, #a3b39e1a 1px, transparent 1px); background-size: 85px 85px; transform: rotate(-28deg) skew(26deg); mask-image: radial-gradient(ellipse at center, #000 20%, transparent 65%); }
+.reasoning-core { position: absolute; left: 8%; top: 65px; width: 220px; height: 220px; }
+.reasoning-core .neural-orb { width: 100%; box-shadow: none; mix-blend-mode: screen; }
+.reasoning-orbit { position: absolute; left: 7%; top: 95px; width: 220px; height: 155px; transform: rotate(-28deg); }
+.reasoning-orbit i { position: absolute; inset: -20px; border-radius: 50%; border: 1px dashed #bfe9b32a; animation: orbit-breathe 8s ease-in-out infinite; }
+.reasoning-orbit i:nth-child(2) { inset: -40px; border-color: #bfe9b313; animation-delay: -2s; }
+.reasoning-orbit i:nth-child(3) { inset: 0; border-style: solid; border-color: #bfe9b329; animation-delay: -4s; }
+.context-fragment { position: absolute; top: 136px; right: 6%; display: flex; flex-direction: column; gap: 12px; max-width: 56%; border: 1px solid #bad6bc2b; border-radius: 6px; padding: 17px 18px; background: #14221af5; backdrop-filter: blur(12px); transform: rotate(-5deg); box-shadow: 0 14px 32px #0004; animation: context-hover 8s ease-in-out infinite; }
+.context-fragment > span { font-size: 8px; color: #9eada0; }
+.context-fragment code { color: #d6f0c1; font: 10px/1.4 Consolas, monospace; white-space: nowrap; }
+.context-fragment > i { display: flex; align-items: center; gap: 6px; color: #8abb99; font-size: 8px; font-style: normal; }
+.reasoning-tabs { position: absolute; bottom: 29px; left: 25px; right: 25px; display: flex; justify-content: center; gap: 9px; }
+.reasoning-tabs button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #5e7059; border-radius: 20px; padding: 7px 12px; background: #101710; color: #a7baa5; font-size: 10px; transition: background .2s, color .2s; }
+.reasoning-tabs button > span { font: 8px Consolas, monospace; opacity: .65; }
+.reasoning-tabs button[aria-selected=true] { color: #efffd9; background: #29442a; border-color: #a4c490; }
+.reasoning-tabs button:first-child[aria-selected=true] { background: #4c2c20; border-color: #c5815e; color: #ffdbad; }
+.reasoning-tabs button:last-child[aria-selected=true] { background: #38401f; border-color: #d5d596; color: #f6facb; }
+.intelligence-note { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-top: 1px solid #bdd4ba21; padding-top: 25px; }
+.intelligence-note > span { color: #879b87; font: 8px/1.8 Consolas, monospace; letter-spacing: 1px; }
+.intelligence-note a { color: #e7f5cb; display: inline-flex; align-items: center; gap: 18px; font-size: 11px; white-space: nowrap; }
+.intelligence-note a:hover { color: #fff; }
+
+@keyframes cursor-human { 0%, 100% { transform: translate(0, 0) rotate(-4deg); } 32% { transform: translate(22px, -34px) rotate(4deg); } 64% { transform: translate(-14px, -10px) rotate(-7deg); } }
+@keyframes cursor-agent { 0%, 100% { transform: translate(0, 0); } 35% { transform: translate(-32px, 27px) rotate(-6deg); } 70% { transform: translate(-6px, -24px) rotate(5deg); } }
+@keyframes node-breathe { 0%, 100% { transform: scale(.96); } 50% { transform: scale(1.07); } }
+@keyframes spark-travel { 0%, 100% { transform: translateY(0) scale(.75); opacity: .5; } 50% { transform: translateY(-13px) scale(1); opacity: 1; } }
+@keyframes context-hover { 0%, 100% { transform: translateY(0) rotate(-5deg); } 50% { transform: translateY(-7px) rotate(-2deg); } }
+@keyframes orbit-breathe { 0%, 100% { transform: scale(.98); } 50% { transform: scale(1.07); } }
+[data-motion=paused] .motion-scene *, [data-motion=paused] .motion-scene *::before { animation-play-state: paused !important; }
+@media (max-width: 1100px) {
+  .intelligence-heading { grid-template-columns: .8fr 1.6fr 1fr; gap: 25px; }
+  .intelligence-grid { gap: 20px; }
+  .motion-scene { height: 345px; }
+  .scene-meta { left: 17px; right: 17px; font-size: 6px; }
+  .reasoning-core { width: 185px; height: 185px; top: 64px; left: 2%; }
+  .reasoning-orbit { width: 180px; height: 120px; left: 3%; }
+  .context-fragment { right: 4%; top: 134px; padding: 14px 12px; }
+  .context-fragment code { font-size: 8px; }
+  .reasoning-tabs { gap: 6px; left: 14px; right: 14px; }
+  .reasoning-tabs button { padding: 7px 10px; font-size: 9px; }
+  .neural-mark { width: 225px; }
+  .pointer-human { left: 16%; }
+  .pointer-agent { left: 63%; }
+  .intelligence-caption h3 { font-size: 20px; }
+}
+@media (max-width: 760px) {
+  .landing-nav > .brand-word { font-size: 33px; }
+  .hero-topline { gap: 10px; }
+  .hero-topline > span { font-size: 7px; letter-spacing: .6px; }
+  .motion-toggle { font-size: 8px; padding: 7px 8px; }
+  .intelligence-section { padding: 58px 24px 30px; }
+  .intelligence-heading { display: block; margin-bottom: 30px; }
+  .landing .intelligence-heading h2 { font-size: 35px; letter-spacing: -1.7px; margin: 24px 0 20px; }
+  .intelligence-heading > p { font-size: 13px; }
+  .intelligence-grid { grid-template-columns: 1fr; gap: 15px; }
+  .motion-scene { height: 325px; }
+  .scene-meta { font-size: 6px; letter-spacing: .4px; top: 17px; }
+  .neural-mark { width: 230px; top: 46%; }
+  .pointer-human { top: 60%; left: 13%; }
+  .pointer-agent { left: 64%; top: 42%; }
+  .scene-pointer > svg { width: 26px; height: 32px; }
+  .scene-pointer > span { font-size: 9px; padding: 5px 7px; }
+  .scene-code { font-size: 7px; left: 18px; bottom: 19px; }
+  .intelligence-caption { padding: 22px 0 26px; min-height: 140px; gap: 12px; }
+  .intelligence-caption h3 { font-size: 21px; }
+  .intelligence-caption p { font-size: 12px; }
+  .reasoning-core { width: 190px; height: 190px; top: 57px; left: 0; }
+  .context-fragment { top: 131px; right: 4%; max-width: 65%; }
+  .reasoning-tabs { bottom: 24px; }
+  .reasoning-tabs button { padding: 7px 9px; font-size: 9px; gap: 6px; }
+  .intelligence-note { flex-direction: column; align-items: flex-start; gap: 17px; padding-top: 20px; }
+  .intelligence-note > span { font-size: 7px; }
+  .preview-agent .neural-orb { max-width: 165px; margin: 20px auto; }
+}
+@media (max-width: 370px) {
+  .landing-nav > .brand-word { font-size: 30px; }
+  .hero-topline > span { max-width: 120px; line-height: 1.6; }
+  .intelligence-section { padding-left: 18px; padding-right: 18px; }
+  .landing .intelligence-heading h2 { font-size: 30px; }
+  .scene-meta { font-size: 5px; left: 12px; right: 12px; }
+  .scene-pointer > span { margin-left: 10px; }
+  .reasoning-tabs { left: 8px; right: 8px; gap: 4px; }
+  .reasoning-tabs button { gap: 4px; padding: 7px 8px; }
+  .reasoning-tabs button > span { display: none; }
+  .context-fragment { padding: 12px 10px; }
+  .context-fragment > span { font-size: 7px; }
+}
+@media (prefers-reduced-motion: reduce) { .motion-scene * { animation: none !important; } }
