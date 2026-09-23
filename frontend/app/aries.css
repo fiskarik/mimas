@@ -1,4 +1,3 @@
-/* Aries visual direction, adapted to the mimas product and its existing UI. */
 :root {
   --bg: #f7f8f2;
   --ink: #122b24;
@@ -55,7 +54,6 @@ input:focus, textarea:focus { outline-color: #83ad92; }
 
 .landing-hero { max-width: none; min-height: 700px; min-height: max(700px, 100svh); position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; padding: 145px 5.4% 24px; color: #fafcf3; background: #0a221d; }
 .hero-surface { position: absolute; inset: 0; z-index: -2; overflow: hidden; }
-.hero-surface video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .hero-surface::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #06191320 0%, #06191300 26%, #071e1970 56%, #03110de3 100%); }
 .hero-topline { width: 100%; max-width: 1500px; margin: 0 auto auto; display: flex; justify-content: space-between; font: 9px/1.4 Consolas, monospace; letter-spacing: 1.5px; color: #d8e9d7b0; }
 .hero-copy { max-width: 1500px; width: 100%; margin: 100px auto 0; }
@@ -201,7 +199,6 @@ input:focus, textarea:focus { outline-color: #83ad92; }
   .landing-hero { padding: 167px 24px 24px; min-height: max(780px, 100svh); }
   .hero-topline { font-size: 8px; letter-spacing: 1px; }
   .hero-topline > span:last-child { display: none; }
-  .hero-surface video { object-position: 60% center; }
   .hero-copy { margin-top: 135px; }
   .hero-copy .small-kicker { font-size: 8px; letter-spacing: 1.2px; margin-bottom: 20px; }
   .hero-copy h1 { font-size: clamp(35px, 7.65vw, 58px); letter-spacing: -.06em; line-height: 1.14; margin-bottom: 23px; }
