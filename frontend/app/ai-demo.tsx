@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
-import {ArrowLeft, ArrowRight, Loader2, RefreshCw} from 'lucide-react';
+import {ArrowLeft, ArrowRight, Loader2, RefreshCw, Square, Volume2} from 'lucide-react';
 import {GlassOrb} from './design';
 import {AnswerReport} from './answer-report';
 import {request, type Access, type Session} from './ai-session';
@@ -20,6 +20,7 @@ export default function AIDemo({linkedAccess, onExit}: {linkedAccess?:Access; on
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [ready,setReady]=useState(false);
+  const [speaking,setSpeaking]=useState(false);
   const answerRef=useRef<HTMLTextAreaElement>(null);
   const {flushEvents, track} = useIntegrityEvents(access, data, busy, setError);
   useEffect(()=>{if(linkedAccess){setAccess(linkedAccess);setReady(true);return;}setKey(sessionStorage.getItem('company-key')||'demo-company');
@@ -42,11 +43,30 @@ export default function AIDemo({linkedAccess, onExit}: {linkedAccess?:Access; on
   async function refresh(){if(!access)return;setBusy(true);setError('');try{const next=await request<Session>(`/${access.id}`,access.token);setData(next);if(next.pending_answer)setAnswer(next.pending_answer.text);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   function reset(){if(linkedAccess){onExit?.();return;}sessionStorage.removeItem('ai-access');setAccess(null);setData(null);setAnswer('');setError('');}
   const current=data?.current_question;
+  useEffect(()=>{
+    setSpeaking(false);
+    return ()=>{if(typeof window!=='undefined'&&'speechSynthesis' in window)window.speechSynthesis.cancel();};
+  },[current?.id]);
+  function speakQuestion(){
+    if(!current)return;
+    if(!('speechSynthesis' in window)){setError('Озвучивание не поддерживается этим браузером. Вопрос доступен текстом.');return;}
+    if(speaking){window.speechSynthesis.cancel();setSpeaking(false);return;}
+    window.speechSynthesis.cancel();
+    const utterance=new SpeechSynthesisUtterance(current.text);
+    utterance.lang='ru-RU';
+    utterance.rate=0.95;
+    const russianVoice=window.speechSynthesis.getVoices().find(voice=>voice.lang.toLowerCase().startsWith('ru'));
+    if(russianVoice)utterance.voice=russianVoice;
+    utterance.onend=()=>setSpeaking(false);
+    utterance.onerror=()=>setSpeaking(false);
+    setSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  }
   const notice=data?.evaluation_notice?.replace(/provider_error|invalid_output|unsupported_evidence|rate_limit|authentication_error|access_denied|model_unavailable|output_truncated|network_error|invalid_provider_response/g,v=>failureNames[v]);
   return <div className="ai-demo"><header className="candidate-header"><a href="/" className="brand-word">mimas.</a>{linkedAccess?<button className="text-link" onClick={onExit}>К возможностям <ArrowRight size={16}/></button>:<a href="/?view=company" className="text-link">Кабинет <ArrowRight size={16}/></a>}</header>
     <main className="ai-demo-main">{linkedAccess?<button className="text-link" onClick={onExit}><ArrowLeft size={15}/> К профилю</button>:<a href="/" className="text-link"><ArrowLeft size={15}/> На главную</a>}
       <div className="ai-demo-heading"><div><span className="eyebrow">MIMAS · ЖИВОЕ AI-ИНТЕРВЬЮ</span><h1>Обсудим, как это работает.</h1><p className="muted">Python Backend · до 20 вопросов / 30 минут</p></div><GlassOrb compact state={busy?'thinking':'idle'}/></div>
-      <div className="note">Текстовый режим: камера и микрофон не включаются. Ответы сохраняются на этом сервере и отправляются AI-провайдеру, настроенному на сервере. Используйте тестовые данные без персональной информации.</div>
+      <div className="note">Ответы вводятся текстом; камера и микрофон не включаются. Вопросы можно озвучить голосом браузера. Ответы сохраняются на этом сервере и отправляются AI-провайдеру, настроенному на сервере. Используйте тестовые данные без персональной информации.</div>
       <p className="tiny muted">Фиксируются вставка, копирование и смена фокуса окна. После ответа может появиться уточняющий вопрос. Эти события сами по себе не снижают оценку.</p>
       {error&&<div role="alert" className="error-box">{error}</div>}
       {notice&&<div role="status" className="warning">{notice}</div>}
@@ -56,7 +76,7 @@ export default function AIDemo({linkedAccess, onExit}: {linkedAccess?:Access; on
       {data.phase==='CREATED'&&<button className="primary" disabled={busy} onClick={()=>void act('start')}>Получить первый вопрос</button>}
       {data.resume_required&&<section className="card ai-start"><p>Сохранён незавершённый этап интервью. Продолжим с последней контрольной точки.</p><button className="primary" disabled={busy} onClick={()=>void act('start')}>Продолжить обработку</button></section>}
       {current&&<section className="card ai-question"><div className="section-top"><span className="badge purple">{names[current.skill]||current.skill}</span><span className="muted tiny">Вопрос {data.questions.length} · {current.type==='verification'?'Проверка утверждения':current.type==='follow_up'?'Уточнение':'Основной вопрос'}</span></div>
-        <h2>{current.text}</h2>{current.generation==='fallback'&&<p className="tiny muted">Использован резервный вопрос из банка.</p>}
+        <h2>{current.text}</h2><button type="button" className="secondary" onClick={speakQuestion} aria-label={speaking?'Остановить озвучивание вопроса':'Озвучить вопрос'}>{speaking?<Square size={16}/>:<Volume2 size={16}/>} {speaking?'Остановить':'Озвучить вопрос'}</button><p className="tiny muted">Голос зависит от браузера и установленных языков.</p>{current.generation==='fallback'&&<p className="tiny muted">Использован резервный вопрос из банка.</p>}
         <form onSubmit={e=>{e.preventDefault();void act('answers');}}><label>Ваш ответ или код<textarea ref={answerRef} value={answer} onChange={e=>setAnswer(e.target.value)} onPaste={e=>track('PASTE_DETECTED',e.clipboardData.getData('text').length)} onCopy={()=>track('COPY_DETECTED')} readOnly={!!data.pending_answer||busy} maxLength={16000} placeholder="Объясните своими словами. Код можно вставить с переносами строк."/></label>
         {data.pending_answer&&<p className="note">Ответ уже сохранён. Повторная отправка продолжит его обработку без дубликата.</p>}
         <div className="button-row"><button className="primary" disabled={busy||!answer.trim()}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} {busy?'AI обрабатывает ответ…':data.pending_answer?'Повторить обработку':'Отправить ответ'}</button><button type="button" className="secondary" disabled={busy||!!data.pending_answer} onClick={()=>void act('finish')}>Завершить и показать отчёт</button></div></form></section>}
