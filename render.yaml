@@ -9,6 +9,8 @@ services:
     envVars:
       - key: MIMAS_ENV
         value: production
+      - key: AI_MODE
+        value: live
       - key: MIMAS_LLM_PROVIDER
         value: groq
       - key: GROQ_MODEL
