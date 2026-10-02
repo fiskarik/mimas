@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {Landing, GlassOrb, stateNames} from './design';
 import AIDemo from './ai-demo';
+import {CandidateHub, EmployerHub} from './marketplace';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BriefcaseBusiness, Check, CheckCircle2, ChevronRight, Circle, Clipboard, Code2, FileText, LayoutDashboard, Link2, Loader2, Mic, Plus, Radio, ShieldCheck, Square, Video, Volume2, X } from 'lucide-react';
 
 type Interview = {id: string; name: string; status: string; mode: string; created: number; started: number | null; completed: number | null; recording_complete: number};
@@ -31,15 +32,19 @@ function ErrorBox({text}: {text: string}) {return text ? <div role="alert" class
 export default function Page() {
   const [ai, setAi] = useState(false);
   const [company, setCompany] = useState(false);
+  const [candidateHub, setCandidateHub] = useState(false);
+  const [employerHub, setEmployerHub] = useState(false);
   const [route, setRoute] = useState<{id: string; token: string} | null | undefined>(undefined);
   useEffect(() => {
     const url = new URL(window.location.href);
     setAi(url.searchParams.get('view') === 'ai');
     setCompany(url.searchParams.get('view') === 'company');
+    setCandidateHub(url.searchParams.get('view') === 'candidate');
+    setEmployerHub(url.searchParams.get('view') === 'employer');
     setRoute(url.searchParams.has('join') ? {id: url.searchParams.get('join')!, token: url.hash.slice(1)} : null);
   }, []);
   if (route === undefined) return <div className="loading"><Loader2 className="spin"/> Загружаем пространство…</div>;
-  return route ? <Candidate id={route.id} token={route.token}/> : ai ? <AIDemo/> : company ? <Company/> : <Landing onCompany={() => {window.location.href = '/?view=company';}}/>;
+  return route ? <Candidate id={route.id} token={route.token}/> : candidateHub ? <CandidateHub/> : employerHub ? <EmployerHub/> : ai ? <AIDemo/> : company ? <Company/> : <Landing onCompany={() => {window.location.href = '/?view=employer';}}/>;
 }
 
 function Company() {

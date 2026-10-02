@@ -12,8 +12,8 @@ const names:Record<string,string> = {'python.core':'Python Core','python.oop':'�
 const levels:Record<string,string> = {basic:'Базовый',junior:'Junior',middle:'Middle',strong_middle:'Strong Middle',senior:'Senior'};
 const failureNames:Record<string,string> = {provider_error:'сбой AI API',invalid_output:'неверный формат ответа модели',unsupported_evidence:'оценка не прошла проверку цитат или цели вопроса',rate_limit:'достигнут лимит AI API',authentication_error:'неверный API-ключ',access_denied:'AI-провайдер запретил доступ',model_unavailable:'модель недоступна',output_truncated:'ответ модели обрезан',network_error:'сбой соединения с AI-провайдером',invalid_provider_response:'неверный ответ API'};
 
-export default function AIDemo(){
-  const [access,setAccess]=useState<Access|null>(null);
+export default function AIDemo({linkedAccess, onExit}: {linkedAccess?:Access; onExit?:()=>void} = {}){
+  const [access,setAccess]=useState<Access|null>(linkedAccess||null);
   const [data,setData]=useState<Session|null>(null);
   const [key,setKey]=useState('demo-company');
   const [answer,setAnswer]=useState('');
@@ -22,7 +22,7 @@ export default function AIDemo(){
   const [ready,setReady]=useState(false);
   const answerRef=useRef<HTMLTextAreaElement>(null);
   const {flushEvents, track} = useIntegrityEvents(access, data, busy, setError);
-  useEffect(()=>{setKey(sessionStorage.getItem('company-key')||'demo-company');
+  useEffect(()=>{if(linkedAccess){setAccess(linkedAccess);setReady(true);return;}setKey(sessionStorage.getItem('company-key')||'demo-company');
     try {const saved=sessionStorage.getItem('ai-access');if(saved){const value=JSON.parse(saved);if(typeof value.id==='string'&&typeof value.token==='string')setAccess(value);}}
     catch{sessionStorage.removeItem('ai-access');}setReady(true);},[]);
   useEffect(()=>{if(!access)return;let cancelled=false;
@@ -40,12 +40,12 @@ export default function AIDemo(){
     finally{setBusy(false);answerRef.current?.focus();}
   }
   async function refresh(){if(!access)return;setBusy(true);setError('');try{const next=await request<Session>(`/${access.id}`,access.token);setData(next);if(next.pending_answer)setAnswer(next.pending_answer.text);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  function reset(){sessionStorage.removeItem('ai-access');setAccess(null);setData(null);setAnswer('');setError('');}
+  function reset(){if(linkedAccess){onExit?.();return;}sessionStorage.removeItem('ai-access');setAccess(null);setData(null);setAnswer('');setError('');}
   const current=data?.current_question;
   const notice=data?.evaluation_notice?.replace(/provider_error|invalid_output|unsupported_evidence|rate_limit|authentication_error|access_denied|model_unavailable|output_truncated|network_error|invalid_provider_response/g,v=>failureNames[v]);
-  return <div className="ai-demo"><header className="candidate-header"><a href="/" className="brand-word">mimas.</a><a href="/?view=company" className="text-link">Кабинет <ArrowRight size={16}/></a></header>
-    <main className="ai-demo-main"><a href="/" className="text-link"><ArrowLeft size={15}/> На главную</a>
-      <div className="ai-demo-heading"><div><span className="eyebrow">MIMAS · ЖИВОЕ AI-ИНТЕРВЬЮ</span><h1>Обсудим, как это работает.</h1><p className="muted">Python Backend · Middle · до 20 вопросов / 30 минут</p></div><GlassOrb compact state={busy?'thinking':'idle'}/></div>
+  return <div className="ai-demo"><header className="candidate-header"><a href="/" className="brand-word">mimas.</a>{linkedAccess?<button className="text-link" onClick={onExit}>К возможностям <ArrowRight size={16}/></button>:<a href="/?view=company" className="text-link">Кабинет <ArrowRight size={16}/></a>}</header>
+    <main className="ai-demo-main">{linkedAccess?<button className="text-link" onClick={onExit}><ArrowLeft size={15}/> К профилю</button>:<a href="/" className="text-link"><ArrowLeft size={15}/> На главную</a>}
+      <div className="ai-demo-heading"><div><span className="eyebrow">MIMAS · ЖИВОЕ AI-ИНТЕРВЬЮ</span><h1>Обсудим, как это работает.</h1><p className="muted">Python Backend · до 20 вопросов / 30 минут</p></div><GlassOrb compact state={busy?'thinking':'idle'}/></div>
       <div className="note">Текстовый режим: камера и микрофон не включаются. Ответы сохраняются на этом сервере и отправляются AI-провайдеру, настроенному на сервере. Используйте тестовые данные без персональной информации.</div>
       <p className="tiny muted">Фиксируются вставка, копирование и смена фокуса окна. После ответа может появиться уточняющий вопрос. Эти события сами по себе не снижают оценку.</p>
       {error&&<div role="alert" className="error-box">{error}</div>}
@@ -60,7 +60,7 @@ export default function AIDemo(){
         <form onSubmit={e=>{e.preventDefault();void act('answers');}}><label>Ваш ответ или код<textarea ref={answerRef} value={answer} onChange={e=>setAnswer(e.target.value)} onPaste={e=>track('PASTE_DETECTED',e.clipboardData.getData('text').length)} onCopy={()=>track('COPY_DETECTED')} readOnly={!!data.pending_answer||busy} maxLength={16000} placeholder="Объясните своими словами. Код можно вставить с переносами строк."/></label>
         {data.pending_answer&&<p className="note">Ответ уже сохранён. Повторная отправка продолжит его обработку без дубликата.</p>}
         <div className="button-row"><button className="primary" disabled={busy||!answer.trim()}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} {busy?'AI обрабатывает ответ…':data.pending_answer?'Повторить обработку':'Отправить ответ'}</button><button type="button" className="secondary" disabled={busy||!!data.pending_answer} onClick={()=>void act('finish')}>Завершить и показать отчёт</button></div></form></section>}
-      {data.report&&<section className="ai-report"><div className="section-top"><div><h2>Отчёт по интервью</h2><p className="muted">{data.report.overall_technical_summary}</p></div><button className="secondary" onClick={reset}>Новое интервью</button></div><p className="note">Уровни предварительные. Отсутствие ответа или сбой оценки не доказывают отсутствие навыка.</p><AnswerReport reviews={data.report.answer_reviews||[]} rubric={data.report.scoring_rubric} names={names}/><details className="skill-profile"><summary>Профиль по навыкам</summary><div className="report-skills">{data.report.skills.map(skill=><article className="card" key={skill.skill}><h3>{names[skill.skill]||skill.skill}</h3><span className="badge">{skill.demonstrated_level?levels[skill.demonstrated_level]:'Недостаточно данных'}</span><p>Ответов: {skill.answers_received} · обработано: {skill.evaluated_answers}</p>{skill.evidence.map(e=><div className="ai-evidence" key={e.id}><strong>{e.type==='positive'?'Подтверждение':e.type==='negative'?'Ошибка в утверждении':'Неопределённость'}</strong><p>{e.claim}</p><blockquote>{e.quote}</blockquote></div>)}</article>)}</div></details></section>}
+      {data.report&&<section className="ai-report"><div className="section-top"><div><h2>Отчёт по интервью</h2><p className="muted">{data.report.overall_technical_summary}</p></div><button className="secondary" onClick={reset}>{linkedAccess?'К профилю':'Новое интервью'}</button></div><p className="note">Уровни предварительные. Отсутствие ответа или сбой оценки не доказывают отсутствие навыка.</p><AnswerReport reviews={data.report.answer_reviews||[]} rubric={data.report.scoring_rubric} names={names}/><details className="skill-profile"><summary>Профиль по навыкам</summary><div className="report-skills">{data.report.skills.map(skill=><article className="card" key={skill.skill}><h3>{names[skill.skill]||skill.skill}</h3><span className="badge">{skill.demonstrated_level?levels[skill.demonstrated_level]:'Недостаточно данных'}</span><p>Ответов: {skill.answers_received} · обработано: {skill.evaluated_answers}</p>{skill.evidence.map(e=><div className="ai-evidence" key={e.id}><strong>{e.type==='positive'?'Подтверждение':e.type==='negative'?'Ошибка в утверждении':'Неопределённость'}</strong><p>{e.claim}</p><blockquote>{e.quote}</blockquote></div>)}</article>)}</div></details></section>}
       {data.report?.integrity&&<IntegritySummary report={data.report.integrity} questions={data.questions}/>}
       {!data.report&&data.answers.length>0&&<details className="card ai-history"><summary>История ответов ({data.answers.length})</summary>{data.answers.map(a=><article key={a.question_id}><h3>{data.questions.find(q=>q.id===a.question_id)?.text}</h3><pre>{a.text}</pre></article>)}</details>}
       </>}

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: mimas
+    runtime: docker
+    region: ohio
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: MIMAS_ENV
+        value: production
+      - key: MIMAS_LLM_PROVIDER
+        value: groq
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: MIMAS_MAX_ASSESSMENTS_PER_DAY
+        value: "10"
+      - key: MIMAS_MAX_CANDIDATES_PER_DAY
+        value: "50"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: COMPANY_KEY
+        generateValue: true

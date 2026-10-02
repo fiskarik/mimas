@@ -1,0 +1,16 @@
+.git
+.idea
+.pytest_cache
+.venv
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/.next
+**/.next-dev
+**/*.tsbuildinfo
+data
+output
+.env
+.env.*
+!.env.example
+*.log

@@ -1,4 +1,4 @@
-"""Local-only mimas demo API. No untrusted Python is executed here."""
+"""MIMAS API. Untrusted candidate code is never executed here."""
 import hashlib
 import json
 import os
@@ -15,14 +15,28 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from backend.database import Database, Interview, AnswerRecord, IntegrityEvent, RecordingChunk, as_dict
 from backend.ai_web import register_ai_routes
-from ai_core.llm.factory import llm_readiness
+from backend.marketplace import register_marketplace_routes
+from ai_core.llm.factory import create_llm_provider, llm_readiness
 
 DATA = Path(os.getenv('DATA_DIR', Path(__file__).resolve().parents[1] / 'data'))
 DATA.mkdir(parents=True, exist_ok=True)
 DB = DATA / 'demo.sqlite3'
-database = Database(DB, os.getenv('DATABASE_URL'))
+PRODUCTION = os.getenv('MIMAS_ENV', '').lower() == 'production'
 COMPANY_KEY = os.getenv('COMPANY_KEY', 'demo-company')
-app = FastAPI(title='mimas demo', version='0.1.0')
+if PRODUCTION and (COMPANY_KEY in ('', 'demo-company') or not os.getenv('DATABASE_URL')):
+    raise RuntimeError('Production requires a private COMPANY_KEY and persistent DATABASE_URL')
+if PRODUCTION:
+    create_llm_provider()
+database = Database(DB, os.getenv('DATABASE_URL'))
+app = FastAPI(title='MIMAS', version='0.2.0')
+
+
+@app.middleware('http')
+async def no_store_api(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store'
+    return response
 
 QUESTIONS = [
     {'id': 'python', 'skill': 'Python', 'text': 'Почему изменяемый аргумент по умолчанию, например items=[], может привести к ошибкам? Как это исправить?'},
@@ -37,6 +51,7 @@ def company(key):
         raise HTTPException(401, 'Неверный ключ работодателя')
 
 register_ai_routes(app, database, company)
+register_marketplace_routes(app, database, company)
 
 def get_interview(interview_id):
     with database.session() as db:

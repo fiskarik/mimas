@@ -2,16 +2,20 @@
 import asyncio
 import hashlib
 import json
+import os
 import secrets
 import time
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException
-from sqlalchemy import Float, Text
+from sqlalchemy import Float, Text, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base, Database
+from backend.marketplace import CandidateAssessment, CandidateInterest, candidate_from_token
 from ai_core.interview.engine import InterviewEngine
+from ai_core.interview.schemas import InterviewInput
+from ai_core.models import Level
 from ai_core.interview.schemas import CandidateAnswer
 from ai_core.interview.state import InterviewState, Phase
 from ai_core.llm.factory import create_llm_provider, llm_readiness
@@ -43,6 +47,11 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
 
     # Fixed lock pool avoids accumulating locks per session. Deployment is one worker.
     locks = [asyncio.Lock() for _ in range(32)]
+    assessment_gate = asyncio.Lock()
+    daily_limit = int(os.getenv('MIMAS_MAX_ASSESSMENTS_PER_DAY',
+                                '10' if os.getenv('MIMAS_ENV', '').lower() == 'production' else '0'))
+    if daily_limit < 0:
+        raise ValueError('MIMAS_MAX_ASSESSMENTS_PER_DAY must be nonnegative')
 
     def lock_for(iid: str):
         return locks[int(hashlib.sha256(iid.encode()).hexdigest()[:8], 16) % len(locks)]
@@ -82,22 +91,54 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 stored.started = engine.started
 
     @app.post('/api/ai/sessions')
-    async def create_ai_session(x_company_key: str | None = Header(None)):
-        authorize_company(x_company_key)
-        try:
-            provider = create_llm_provider()
-        except ValueError as exc:
-            raise HTTPException(503, str(exc)) from None
-        engine = InterviewEngine(provider, clock=time.time)
-        engine.state.llm_provider = getattr(provider, 'name', 'groq')
-        token = secrets.token_urlsafe(32)
-        row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(token.encode()).hexdigest(),
-                        model=provider.model, started=time.time(), state=engine.state.model_dump_json(), trace='[]')
-        engine.state.interview_id = row.id
-        row.state = engine.state.model_dump_json()
-        with database.session(write=True) as db:
-            db.add(row)
-        return {'id': row.id, 'token': token}
+    async def create_ai_session(x_company_key: str | None = Header(None),
+                                x_candidate_token: str | None = Header(None)):
+        profile = None
+        if x_candidate_token:
+            profile = candidate_from_token(database, x_candidate_token)
+            with database.session() as db:
+                selected = db.scalar(select(CandidateInterest).where(
+                    CandidateInterest.candidate_id == profile.id).limit(1))
+            if not selected:
+                raise HTTPException(409, 'Сначала выберите интересующую возможность.')
+        else:
+            authorize_company(x_company_key)
+
+        async def create():
+            try:
+                provider = create_llm_provider()
+            except ValueError as exc:
+                raise HTTPException(503, str(exc)) from None
+            config = InterviewInput(target_level=Level(profile.level)) if profile else None
+            engine = InterviewEngine(provider, config=config, clock=time.time)
+            engine.state.llm_provider = getattr(provider, 'name', 'groq')
+            token = x_candidate_token if profile else secrets.token_urlsafe(32)
+            row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                            model=provider.model, started=time.time(),
+                            state=engine.state.model_dump_json(), trace='[]')
+            engine.state.interview_id = row.id
+            row.state = engine.state.model_dump_json()
+            with database.session(write=True) as db:
+                if profile and daily_limit:
+                    active_today = db.scalar(select(func.count()).select_from(CandidateAssessment).where(
+                        CandidateAssessment.created >= time.time() - 86400))
+                    if active_today >= daily_limit:
+                        raise HTTPException(429, 'Бесплатный дневной лимит интервью исчерпан. Повторите позже.')
+                db.add(row)
+                if profile:
+                    db.add(CandidateAssessment(candidate_id=profile.id, session_id=row.id,
+                                               created=time.time()))
+            return {'id': row.id, 'token': token}
+
+        if profile:
+            async with lock_for(profile.id):
+                with database.session() as db:
+                    previous = db.get(CandidateAssessment, profile.id)
+                if previous:
+                    return {'id': previous.session_id, 'token': x_candidate_token}
+                async with assessment_gate:
+                    return await create()
+        return await create()
 
     @app.get('/api/ai/sessions/{iid}')
     async def get_ai_session(iid: str, x_interview_token: str | None = Header(None)):

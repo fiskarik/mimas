@@ -1,0 +1,47 @@
+.market{min-height:100vh;background:#f7f8fa;color:var(--ink)}
+.market-header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:23px max(24px,calc((100vw - 1120px)/2));background:#fff;border-bottom:1px solid var(--line)}
+.market-header .brand-word{font-size:25px;font-weight:650;letter-spacing:-1px}
+.market-header nav{display:flex;gap:24px;align-items:center}
+.market-main{max-width:1120px;margin:auto;padding:48px 24px 80px}
+.market-main>h1{font-size:43px;max-width:680px}
+.market-main>p.muted{max-width:710px;font-size:15px}
+.market-form,.market-assessment,.market-discovery{padding:30px;margin:26px 0}
+.market-form{max-width:850px}
+.market-form form label{margin:16px 0}
+.market-fields{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.market select{display:block;width:100%;margin-top:8px;padding:12px 13px;border:1px solid #e0e2eb;border-radius:8px;background:#fff;color:var(--ink);font:inherit}
+.market select:focus{outline:2px solid #b5a9ee;outline-offset:1px}
+.market-form textarea{min-height:120px}
+.market-profile{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:26px;margin:28px 0}
+.market-profile h2{font-size:25px}
+.market-profile p{margin-bottom:10px}
+.market-section{margin:40px 0}
+.market-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:20px}
+.market-heading h2{font-size:27px;margin-bottom:0}
+.market-heading .eyebrow{margin-bottom:6px}
+.market-heading select{width:auto;max-width:330px}
+.market-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.market-opportunity,.market-person{padding:25px;min-width:0}
+.market-opportunity h3,.market-person h3{font-size:21px;line-height:1.35;margin-bottom:8px}
+.market-opportunity>p.muted{min-height:50px;white-space:pre-wrap}
+.market-opportunity .primary,.market-opportunity .secondary{margin-top:18px}
+.market-statuses{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.market-item-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.market-item-top .eyebrow{margin-bottom:9px}
+.market-reasons{color:#7c7890;font-size:12px;margin:15px 0 0}
+.market-empty{grid-column:1/-1;padding:35px;text-align:center;color:var(--muted)}
+.market-empty svg{color:var(--accent);margin-bottom:12px}
+.market-empty h3{font-size:17px;color:var(--ink)}
+.market-assessment{border-color:#dcd5fb;background:linear-gradient(130deg,#fff,#f5f1ff)}
+.market-assessment h2{font-size:26px}
+.market-discovery{max-width:850px}
+.market-discovery .badge{margin-left:12px}
+.market-person>p{margin-top:12px}
+.market-person .text-link{margin:17px 0 4px}
+.market-skill{border-top:1px solid var(--line);padding:12px 0;font-size:12px}
+.market-skill summary{cursor:pointer;font-weight:600}
+.market-skill blockquote{margin:12px 0;padding:10px 12px;border-left:2px solid var(--accent);background:#f8f7fc;white-space:pre-wrap;overflow-wrap:anywhere}
+.market-skill blockquote strong{font-weight:600}
+.market-skill-question{color:var(--muted);font-size:11px}
+.market-footer{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;margin-top:40px}
+@media(max-width:760px){.market-header{padding:17px 18px}.market-header nav{gap:13px}.market-header .text-link{font-size:11px}.market-main{padding:30px 16px 60px}.market-main>h1{font-size:32px}.market-fields,.market-list{grid-template-columns:1fr}.market-form,.market-assessment,.market-discovery{padding:22px}.market-profile{flex-direction:column}.market-heading{align-items:flex-start;flex-direction:column}.market-heading select{max-width:100%}.market-opportunity>p.muted{min-height:0}}

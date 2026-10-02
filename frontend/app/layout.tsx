@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import './design.css';
 import './ai-demo.css';
+import './marketplace.css';
 import './aries.css';
 import './motion.css';
 import {MotionProvider} from './motion';
