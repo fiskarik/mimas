@@ -51,6 +51,7 @@ class Turn(Model):
 class InterviewState(Model):
     llm_provider: str | None = None
     plan_snapshot: CompetencyPlan | None = None
+    candidate_context: dict = Field(default_factory=dict)
     events_truncated: bool = False
     interview_id: str = Field(default_factory=lambda: uuid4().hex)
     started_at: datetime | None = None

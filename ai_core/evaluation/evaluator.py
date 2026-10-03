@@ -19,7 +19,7 @@ class AnswerEvaluator:
     async def evaluate(self, question: Question, answer: str, level: Level,
                        previous_evidence: list[dict], misconception: dict | None = None,
                        previous_answers: list[dict] | None = None,
-                       verification: dict | None = None) -> EvaluationAttempt:
+                       verification: dict | None = None, criteria: list[str] | None = None) -> EvaluationAttempt:
         abstention = no_answer_result(answer, question.difficulty)
         metadata = {'provider':getattr(self.provider, 'name', None), 'model':getattr(self.provider, 'model', None)}
         if abstention:
@@ -29,6 +29,8 @@ class AnswerEvaluator:
                    'misconception_to_verify': misconception}
         payload['previous_answers_for_context_only'] = previous_answers or []
         payload['assessment_scope'] = question.goal
+        if criteria:
+            payload['approved_criteria'] = criteria
         payload['verification_target'] = verification
         payload['question']['text'] = scoped_question_text(question.text, question.goal)
         failures: list[str] = []

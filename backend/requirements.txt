@@ -5,3 +5,9 @@ python-multipart>=0.0.20,<1
 pytest>=8,<10
 SQLAlchemy>=2.0,<2.1
 google-genai==2.24.0
+alembic>=1.13,<2
+psycopg2-binary>=2.9,<3
+boto3>=1.35,<2
+pypdf>=5,<7
+python-docx>=1.1,<2
+jsonschema>=4.23,<5

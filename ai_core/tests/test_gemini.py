@@ -134,8 +134,8 @@ def test_factory_selects_provider_and_environment_overrides_file(tmp_path, monke
         monkeypatch.delenv(key, raising=False)
     env = tmp_path/'settings'
     env.write_text('GEMINI_API_KEY=fake-google\nGROQ_API_KEY=fake-groq\n', encoding='utf-8')
-    assert create_llm_provider(env_file=env).name == 'gemini'
-    assert create_llm_provider(env_file=env).model == 'gemini-3.8-flash'
+    assert create_llm_provider(provider='gemini', env_file=env).name == 'gemini'
+    assert create_llm_provider(provider='gemini', env_file=env).model == 'gemini-3.8-flash'
     monkeypatch.setenv('MIMAS_LLM_PROVIDER','groq')
     assert create_llm_provider(env_file=env).name == 'groq'
     assert create_llm_provider(provider='gemini', env_file=env).name == 'gemini'

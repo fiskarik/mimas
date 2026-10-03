@@ -45,3 +45,38 @@
 .market-skill-question{color:var(--muted);font-size:11px}
 .market-footer{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;margin-top:40px}
 @media(max-width:760px){.market-header{padding:17px 18px}.market-header nav{gap:13px}.market-header .text-link{font-size:11px}.market-main{padding:30px 16px 60px}.market-main>h1{font-size:32px}.market-fields,.market-list{grid-template-columns:1fr}.market-form,.market-assessment,.market-discovery{padding:22px}.market-profile{flex-direction:column}.market-heading{align-items:flex-start;flex-direction:column}.market-heading select{max-width:100%}.market-opportunity>p.muted{min-height:0}}
+
+.market-consent{display:flex;align-items:flex-start;gap:12px;font-size:13px;line-height:1.5;margin:20px 0;color:var(--ink)}
+.market-consent input{width:18px;min-width:18px;height:18px;margin:2px 0 0;accent-color:var(--accent)}
+.market-onboard{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.market-onboard>.market-form{width:100%;margin:0;max-width:none}
+.market-onboard>.market-admin{grid-column:1/-1}
+.market-admin{padding:22px}
+.market-admin summary{cursor:pointer;font-weight:600}
+.market-admin form{max-width:550px;padding:12px 0}
+.market-admin-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:13px 0;border-top:1px solid var(--line)}
+.market-admin-row p{margin:3px 0 0}
+.market-secret{margin-top:20px}
+.market-secret input{font-family:monospace}
+.market-selected{border-color:#bbb0f2;box-shadow:0 0 0 2px #e5dfff}
+.market-source-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:15px 0}
+.market-source-tabs .selected{color:var(--accent);border-color:#bfb3ef;background:#f7f4ff}
+.market-import{background:#faf9fe;border:1px dashed #d8d0ed;border-radius:10px;padding:15px;margin-bottom:16px}
+.market-import textarea{min-height:120px}
+.market-import .tiny{display:flex;align-items:center;gap:8px;margin:8px 0}
+.market-import .secondary{margin:9px 0 0}
+.market-workbench{max-width:none}
+.market-template{margin:20px 0}
+.market-template>.market-item-top{margin-bottom:10px}
+.market-template>.market-item-top h3{font-size:19px}
+.market-skill-editor{padding:22px;margin:16px 0;background:#fcfcfe}
+.market-skill-editor label{margin:13px 0;display:block}
+.market-skill-editor textarea{min-height:75px}
+.market-skill-editor input[type="number"]{max-width:150px}
+.market-pairs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
+.market-pair{padding:15px;border:1px solid var(--line);border-radius:10px;background:white}
+.market-pair strong{font-size:12px}
+.market-pair .text-link{margin-top:8px}
+.market-video{margin-top:19px}
+.market-video video{display:block;width:100%;max-height:310px;margin-top:12px;border-radius:8px;background:#222}
+@media(max-width:760px){.market-onboard,.market-pairs{grid-template-columns:1fr}.market-admin-row{align-items:flex-start;flex-direction:column}}

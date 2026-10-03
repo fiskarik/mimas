@@ -9,19 +9,37 @@ services:
     envVars:
       - key: MIMAS_ENV
         value: production
-      - key: AI_MODE
-        value: live
       - key: MIMAS_LLM_PROVIDER
-        value: groq
-      - key: GROQ_MODEL
-        value: openai/gpt-oss-20b
+        value: yandex
+      - key: YANDEX_MODEL
+        value: deepseek-v4.1-flash
       - key: MIMAS_MAX_ASSESSMENTS_PER_DAY
         value: "10"
       - key: MIMAS_MAX_CANDIDATES_PER_DAY
         value: "50"
-      - key: GROQ_API_KEY
-        sync: false
+      - key: MIMAS_MAX_COMPANY_APPLICATIONS_PER_DAY
+        value: "20"
+      - key: MIMAS_AI_MONTHLY_LIMIT_RUB
+        value: "1000"
       - key: DATABASE_URL
         sync: false
       - key: COMPANY_KEY
-        generateValue: true
+        sync: false
+      - key: MIMAS_ADMIN_KEY
+        sync: false
+      - key: YANDEX_API_KEY
+        sync: false
+      - key: YANDEX_FOLDER_ID
+        sync: false
+      - key: MIMAS_S3_BUCKET
+        sync: false
+      - key: MIMAS_S3_ENDPOINT
+        value: https://storage.yandexcloud.net
+      - key: MIMAS_S3_REGION
+        value: ru-central1
+      - key: MIMAS_S3_ACCESS_KEY
+        sync: false
+      - key: MIMAS_S3_SECRET_KEY
+        sync: false
+      - key: MIMAS_MIGRATION_BACKUP_CONFIRMED
+        sync: false

@@ -7,7 +7,7 @@ from ai_core.models import Level, Model, QuestionType, Text
 
 
 class InterviewInput(Model):
-    role: Literal['Python Backend Developer'] = 'Python Backend Developer'
+    role: Text = 'Python Backend Developer'
     target_level: Level = Level.MIDDLE
 
 

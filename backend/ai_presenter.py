@@ -10,11 +10,13 @@ def session_view(row) -> dict:
     last = state.turns[-1] if state.turns else None
     def public_question(q):
         return q.model_dump(mode='json', include={'id', 'skill', 'type', 'text', 'generation'})
+    archived = bool(getattr(row, 'archived', 0))
     return {'id': row.id, 'model': row.model, 'phase': state.phase,
+            'archived': archived, 'read_only': archived,
             'interview_id': row.id, 'status': 'completed' if completed else 'created' if state.phase == Phase.CREATED else 'in_progress',
             'action': (state.next_action or {}).get('action', 'ASK_QUESTION'),
             'progress': {'questions_answered':len(state.turns), 'skills_completed':sum(s.completed for s in state.skills), 'skills_total':len(state.skills)},
-            'resume_required': state.phase not in (Phase.CREATED, Phase.WAITING_FOR_ANSWER, Phase.COMPLETED),
+            'resume_required': not archived and state.phase not in (Phase.CREATED, Phase.WAITING_FOR_ANSWER, Phase.COMPLETED),
             'questions': [public_question(q) for q in state.questions],
             'answers': [t.answer.model_dump(mode='json') for t in state.turns],
             'current_question': public_question(state.questions[-1]) if state.phase == Phase.WAITING_FOR_ANSWER else None,

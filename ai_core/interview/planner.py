@@ -11,6 +11,7 @@ class Competency(Model):
     concepts: list[Text] = Field(min_length=1)
     goals: list[Text] = Field(min_length=1)
     questions: list[Text] = Field(min_length=1)
+    evaluation_criteria: list[Text] = Field(default_factory=list)
     target_questions: int = Field(ge=1, le=5)
 
     @model_validator(mode='after')

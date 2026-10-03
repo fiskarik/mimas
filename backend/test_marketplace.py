@@ -1,3 +1,6 @@
+import pytest
+pytest.skip('Archived SQLite/Groq API contract; replaced by tenant assessment integration tests.', allow_module_level=True)
+
 """The candidate-to-employer path must keep one assessment and require consent."""
 import importlib
 import json

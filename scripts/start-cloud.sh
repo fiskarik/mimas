@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd /app
+python scripts/migrate.py
 python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --workers 1 &
 api_pid=$!
 HOSTNAME=0.0.0.0 PORT="${PORT:-10000}" node /app/frontend/server.js &

@@ -19,6 +19,9 @@ node = shutil.which('node.exe' if os.name == 'nt' else 'node')
 next_bin = ROOT / 'frontend' / 'node_modules' / 'next' / 'dist' / 'bin' / 'next'
 if not python.exists() or not node or not next_bin.exists():
     sys.exit('Run setup.ps1 first (Python 3.11+ and Node 20.9+ required).')
+if not os.getenv('DATABASE_URL'):
+    sys.exit('Set DATABASE_URL to a PostgreSQL database in .env before starting MIMAS.')
+subprocess.run([str(python), 'scripts/migrate.py'], cwd=ROOT, check=True)
 processes = []
 child_env = os.environ.copy()
 child_env.pop('PYTHONPATH', None)
@@ -35,4 +38,3 @@ finally:
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], capture_output=True)
             else:
                 process.terminate()
-

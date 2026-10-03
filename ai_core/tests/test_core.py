@@ -38,8 +38,7 @@ def test_schema_forbids_engine_actions_and_unjustified_results():
         EvaluationResult(**evaluation(follow_up_required=True))
     with pytest.raises(ValidationError):
         Limits(max_questions=0)
-    with pytest.raises(ValidationError):
-        InterviewInput(role='Unknown profession')
+    assert InterviewInput(role='Unknown profession').role == 'Unknown profession'
 
 
 def test_quote_hallucination_retries_entire_assessment():

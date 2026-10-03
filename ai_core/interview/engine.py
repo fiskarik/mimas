@@ -32,6 +32,7 @@ TRANSITIONS = {
 class InterviewEngine:
     def __init__(self, provider: LLMProvider, config: InterviewInput | None = None,
                  limits: Limits | None = None, plan: CompetencyPlan | None = None,
+                 candidate_context: dict | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  trace_sink: Callable[[dict], None] | None = None,
                  checkpoint: Callable | None = None):
@@ -40,7 +41,8 @@ class InterviewEngine:
         if config.role != self.plan.role:
             raise ValueError('Plan role does not match requested role')
         self.limits = limits or Limits()
-        self.state = InterviewState(config=config, llm_provider=getattr(provider, 'name', None), limits=self.limits, plan_snapshot=self.plan.model_copy(deep=True), skills=[
+        self.state = InterviewState(config=config, llm_provider=getattr(provider, 'name', None), limits=self.limits, plan_snapshot=self.plan.model_copy(deep=True),
+                                    candidate_context=candidate_context or {}, skills=[
             SkillState(skill=s.id, target_level=config.target_level,
                        difficulty=list(Level).index(config.target_level) + 1)
             for s in self.plan.skills])
@@ -191,7 +193,8 @@ class InterviewEngine:
             [m.model_dump(mode='json') for m in skill.misconceptions], skill.primary_questions,
             {'action': spec.action, 'candidate_answer': source.answer.text if source else None,
              'verification': verification.model_dump(mode='json') if verification else None,
-             'contradictions': [c.model_dump(mode='json') for c in self.state.contradictions if c.skill == skill.skill]})
+             'contradictions': [c.model_dump(mode='json') for c in self.state.contradictions if c.skill == skill.skill],
+             'candidate_context': self.state.candidate_context})
         if self.elapsed >= self.limits.time_budget_seconds:
             self.complete('time_budget')
             return None
@@ -235,7 +238,8 @@ class InterviewEngine:
                                                 misconception.model_dump(mode='json') if misconception else None,
                                                 [{'question_id': t.question.id, 'question': t.question.text, 'answer': t.answer.text}
                                                  for t in self.state.turns if t.question.skill == question.skill],
-                                                verification.model_dump(mode='json') if verification else None)
+                                                verification.model_dump(mode='json') if verification else None,
+                                                self.plan.skills[self.state.skill_index].evaluation_criteria)
         apply_evaluation(self.state, self.limits, question, answer, attempt, self.record)
         self.transition(Phase.DECIDE_NEXT_ACTION)
         self.state.next_action = None

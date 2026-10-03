@@ -7,8 +7,10 @@ import secrets
 import time
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException
-from sqlalchemy import Float, Text, func, select
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from pydantic import BaseModel
+from sqlalchemy import Float, Integer, Text, func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base, Database
@@ -20,6 +22,7 @@ from ai_core.interview.schemas import CandidateAnswer
 from ai_core.interview.state import InterviewState, Phase
 from ai_core.llm.factory import create_llm_provider, llm_readiness
 from ai_core.llm.base import ProviderError
+from backend.yandex_budget import BudgetExceeded, YandexBudget
 from fastapi.responses import JSONResponse
 from backend.ai_presenter import session_view as view
 from ai_core.interview.events import RuntimeEvent
@@ -34,12 +37,23 @@ class AISession(Base):
     state: Mapped[str] = mapped_column(Text)
     trace: Mapped[str] = mapped_column(Text, default='[]')
     pending: Mapped[str | None] = mapped_column(Text)
+    candidate_id: Mapped[str | None] = mapped_column(Text)
+    opportunity_id: Mapped[str | None] = mapped_column(Text)
+    archived: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
 
+
+class SessionCreate(BaseModel):
+    opportunity_id: str
+    consent: bool
 
 def register_ai_routes(app: FastAPI, database: Database, authorize_company):
     @app.exception_handler(ProviderError)
     async def llm_error(request, exc):
         return JSONResponse(status_code=503, content={'detail':'AI временно недоступен. Состояние сохранено; повторите обработку.', 'code':exc.code})
+
+    @app.exception_handler(BudgetExceeded)
+    async def budget_error(request, exc):
+        return JSONResponse(status_code=429, content={'detail': 'Месячный лимит AI исчерпан. Ответы сохранены; продолжите позже.'})
 
     @app.get('/api/ai/health')
     async def ai_health():
@@ -56,18 +70,20 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
     def lock_for(iid: str):
         return locks[int(hashlib.sha256(iid.encode()).hexdigest()[:8], 16) % len(locks)]
 
-    def load(iid: str, token: str | None) -> AISession:
+    def load(iid: str, token: str | None, *, allow_archived: bool = False) -> AISession:
         with database.session() as db:
             row = db.get(AISession, iid)
         if not row or not token or not secrets.compare_digest(row.token_hash, hashlib.sha256(token.encode()).hexdigest()):
             raise HTTPException(401, 'Сессия недоступна: проверьте ссылку или начните новую.')
+        if row.archived and not allow_archived:
+            raise HTTPException(410, 'Это старое интервью переведено в архив. Начните новое по вакансии.')
         return row
 
     def restore(row: AISession) -> InterviewEngine:
         state = InterviewState.model_validate_json(row.state)
         try:
-            # Legacy sessions predate provider selection and were always Groq.
-            provider = create_llm_provider(provider=state.llm_provider or 'groq', model=row.model)
+            # Archived sessions are read-only; all active sessions use Yandex.
+            provider = create_llm_provider(provider='yandex', model=row.model, budget=YandexBudget(database))
         except ValueError as exc:
             raise HTTPException(503, str(exc)) from None
         provider.model = row.model
@@ -90,65 +106,98 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             if engine.started is not None:
                 stored.started = engine.started
 
-    @app.post('/api/ai/sessions')
-    async def create_ai_session(x_company_key: str | None = Header(None),
-                                x_candidate_token: str | None = Header(None)):
-        profile = None
-        if x_candidate_token:
-            profile = candidate_from_token(database, x_candidate_token)
+    def public_view(row: AISession):
+        result = view(row)
+        if row.opportunity_id:
+            from backend.media import VideoRecording
             with database.session() as db:
-                selected = db.scalar(select(CandidateInterest).where(
-                    CandidateInterest.candidate_id == profile.id).limit(1))
-            if not selected:
-                raise HTTPException(409, 'Сначала выберите интересующую возможность.')
-        else:
-            authorize_company(x_company_key)
+                recording = db.get(VideoRecording, row.id)
+            if not recording or recording.status != 'completed':
+                result['report'] = None
+                result['recording_required'] = True
+                result['recording_status'] = recording.status if recording else 'none'
+            else:
+                result['recording_required'] = False
+                result['recording_status'] = 'completed'
+                result['recording_incomplete'] = bool(recording.interrupted)
+        return result
 
-        async def create():
+    @app.post('/api/ai/sessions')
+    async def create_ai_session(body: SessionCreate,
+                                x_candidate_token: str | None = Header(None)):
+        from backend.marketplace import Opportunity, VacancyTemplate
+        from ai_core.interview.planner import CompetencyPlan
+        from backend.yandex_budget import YandexBudget
+
+        profile = candidate_from_token(database, x_candidate_token)
+        if body.consent is not True:
+            raise HTTPException(422, 'Подтвердите согласие на запись и передачу результата компании.')
+
+        async with lock_for(profile.id + ':' + body.opportunity_id):
+            with database.session() as db:
+                previous = db.get(CandidateAssessment, (profile.id, body.opportunity_id))
+                opportunity = db.get(Opportunity, body.opportunity_id)
+                interested = db.get(CandidateInterest, (profile.id, body.opportunity_id))
+                template = db.scalar(select(VacancyTemplate).where(
+                    VacancyTemplate.opportunity_id == body.opportunity_id,
+                    VacancyTemplate.status == 'approved').order_by(VacancyTemplate.version.desc()).limit(1))
+            if previous:
+                return {'id': previous.session_id, 'token': x_candidate_token}
+            if not opportunity or opportunity.status != 'open' or not interested or not template:
+                raise HTTPException(409, 'Выберите опубликованную вакансию с утверждённым тестом.')
+            plan = CompetencyPlan.model_validate_json(template.plan_json)
             try:
-                provider = create_llm_provider()
+                provider = create_llm_provider(provider='yandex', budget=YandexBudget(database))
             except ValueError as exc:
                 raise HTTPException(503, str(exc)) from None
-            config = InterviewInput(target_level=Level(profile.level)) if profile else None
-            engine = InterviewEngine(provider, config=config, clock=time.time)
-            engine.state.llm_provider = getattr(provider, 'name', 'groq')
-            token = x_candidate_token if profile else secrets.token_urlsafe(32)
-            row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(token.encode()).hexdigest(),
-                            model=provider.model, started=time.time(),
-                            state=engine.state.model_dump_json(), trace='[]')
+            config = InterviewInput(role=plan.role, target_level=Level(profile.level))
+            context = {'candidate_level': profile.level, 'candidate_stack': json.loads(profile.stack),
+                       'years_experience': profile.years_experience,
+                       'vacancy_title': opportunity.title, 'vacancy_stack': json.loads(opportunity.stack)}
+            engine = InterviewEngine(provider, config=config, plan=plan,
+                                     candidate_context=context, clock=time.time)
+            engine.state.llm_provider = 'yandex'
+            now = time.time()
+            row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(x_candidate_token.encode()).hexdigest(),
+                            model=provider.model, started=now, state=engine.state.model_dump_json(),
+                            trace='[]', candidate_id=profile.id, opportunity_id=opportunity.id, archived=0)
             engine.state.interview_id = row.id
             row.state = engine.state.model_dump_json()
-            with database.session(write=True) as db:
-                if profile and daily_limit:
-                    active_today = db.scalar(select(func.count()).select_from(CandidateAssessment).where(
-                        CandidateAssessment.created >= time.time() - 86400))
-                    if active_today >= daily_limit:
-                        raise HTTPException(429, 'Бесплатный дневной лимит интервью исчерпан. Повторите позже.')
-                db.add(row)
-                if profile:
-                    db.add(CandidateAssessment(candidate_id=profile.id, session_id=row.id,
-                                               created=time.time()))
-            return {'id': row.id, 'token': token}
-
-        if profile:
-            async with lock_for(profile.id):
-                with database.session() as db:
-                    previous = db.get(CandidateAssessment, profile.id)
-                if previous:
-                    return {'id': previous.session_id, 'token': x_candidate_token}
-                async with assessment_gate:
-                    return await create()
-        return await create()
-
+            async with assessment_gate:
+                try:
+                    with database.session(write=True) as db:
+                        if daily_limit:
+                            if db.bind.dialect.name == 'postgresql':
+                                db.execute(text('SELECT pg_advisory_xact_lock(62714622)'))
+                            active_today = db.scalar(select(func.count()).select_from(CandidateAssessment).where(
+                                CandidateAssessment.created >= now - 86400))
+                            if active_today >= daily_limit:
+                                raise HTTPException(429, 'Дневной лимит интервью исчерпан. Повторите позже.')
+                        db.add(row)
+                        db.add(CandidateAssessment(candidate_id=profile.id, opportunity_id=opportunity.id,
+                                                   session_id=row.id, consent_at=now, created=now))
+                except IntegrityError:
+                    # Another worker may have created this candidate/vacancy pair.
+                    with database.session() as db:
+                        existing = db.get(CandidateAssessment, (profile.id, opportunity.id))
+                    if existing:
+                        return {'id': existing.session_id, 'token': x_candidate_token}
+                    raise
+            return {'id': row.id, 'token': x_candidate_token}
     @app.get('/api/ai/sessions/{iid}')
     async def get_ai_session(iid: str, x_interview_token: str | None = Header(None)):
-        return view(load(iid, x_interview_token))
+        return public_view(load(iid, x_interview_token, allow_archived=True))
 
     @app.post('/api/ai/sessions/{iid}/start')
     async def start_ai_session(iid: str, x_interview_token: str | None = Header(None)):
         async with lock_for(iid):
             row = load(iid, x_interview_token)
             if InterviewState.model_validate_json(row.state).phase == Phase.CREATED:
+                from backend.media import VideoRecording
+                with database.session() as db:
+                    video = db.get(VideoRecording, iid)
+                if not video or video.status not in ('uploading', 'completed'):
+                    raise HTTPException(409, 'Включите камеру и начните запись перед интервью.')
                 engine = restore(row)
                 await engine.handle(RuntimeEvent(type='INTERVIEW_STARTED'))
                 with database.session(write=True) as db:
@@ -158,7 +207,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 engine = restore(row)
                 await engine.resume()
                 save(row, engine)
-            return view(load(iid, x_interview_token))
+            return public_view(load(iid, x_interview_token))
 
     @app.post('/api/ai/sessions/{iid}/answers')
     async def answer_ai_session(iid: str, body: CandidateAnswer, x_interview_token: str | None = Header(None)):
@@ -173,14 +222,14 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                     engine = restore(row)
                     await engine.resume()
                     save(row, engine)
-                return view(load(iid, x_interview_token))
+                return public_view(load(iid, x_interview_token))
             if state.pending_answer:
                 if state.pending_answer != body:
                     raise HTTPException(409, 'Повторите обработку сохранённого ответа.')
                 engine = restore(row)
                 await engine.resume()
                 save(row, engine)
-                return view(load(iid, x_interview_token))
+                return public_view(load(iid, x_interview_token))
             if state.phase != Phase.WAITING_FOR_ANSWER or state.questions[-1].id != body.question_id:
                 raise HTTPException(409, 'Сначала ответьте на текущий вопрос.')
             if row.pending and CandidateAnswer.model_validate_json(row.pending) != body:
@@ -190,7 +239,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             save(row, engine, body.model_dump_json())
             await engine.handle(RuntimeEvent(type='ANSWER_SUBMITTED', question_id=body.question_id), body.text)
             save(row, engine)
-            return view(load(iid, x_interview_token))
+            return public_view(load(iid, x_interview_token))
 
     @app.post('/api/ai/sessions/{iid}/events')
     async def runtime_event(iid: str, body: RuntimeEvent, x_interview_token: str | None = Header(None)):
@@ -220,4 +269,29 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                     raise HTTPException(409, 'Сначала продолжите обработку интервью.')
                 await engine.handle(RuntimeEvent(type='INTERVIEW_FINISH_REQUESTED'))
                 save(row, engine)
-            return view(load(iid, x_interview_token))
+            return public_view(load(iid, x_interview_token))
+
+
+
+
+
+
+    @app.post('/api/ai/sessions/{iid}/transcribe')
+    async def transcribe_ai_answer(iid: str, audio: UploadFile = File(...),
+                                   x_interview_token: str | None = Header(None)):
+        from backend.yandex_services import configured_yandex_services, YandexServiceError, MAX_AUDIO_BYTES
+        row = load(iid, x_interview_token)
+        if InterviewState.model_validate_json(row.state).phase != Phase.WAITING_FOR_ANSWER:
+            raise HTTPException(409, 'Сначала начните интервью.')
+        if audio.content_type not in ('audio/webm', 'video/webm', 'audio/webm;codecs=opus'):
+            raise HTTPException(415, 'Загрузите запись WebM.')
+        payload = await audio.read(MAX_AUDIO_BYTES + 1)
+        if not payload or len(payload) > MAX_AUDIO_BYTES:
+            raise HTTPException(413, 'Аудио должно быть не больше 12 МБ.')
+        try:
+            transcript = await configured_yandex_services(database).transcribe_webm(payload)
+        except ValueError:
+            raise HTTPException(503, 'SpeechKit не настроен. Введите ответ текстом.') from None
+        except YandexServiceError as exc:
+            raise HTTPException(503, str(exc)) from None
+        return {'text': transcript}

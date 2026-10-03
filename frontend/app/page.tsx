@@ -44,7 +44,7 @@ export default function Page() {
     setRoute(url.searchParams.has('join') ? {id: url.searchParams.get('join')!, token: url.hash.slice(1)} : null);
   }, []);
   if (route === undefined) return <div className="loading"><Loader2 className="spin"/> Загружаем пространство…</div>;
-  return route ? <Candidate id={route.id} token={route.token}/> : candidateHub ? <CandidateHub/> : employerHub ? <EmployerHub/> : ai ? <AIDemo/> : company ? <Company/> : <Landing onCompany={() => {window.location.href = '/?view=employer';}}/>;
+  return route ? <div className="market"><header className="market-header"><a href="/" className="brand-word">mimas.</a></header><main className="market-main"><span className="eyebrow">СТАРОЕ ПРИГЛАШЕНИЕ</span><h1>Интервью теперь привязано к вакансии.</h1><p className="muted">Эта ссылка относится к прежней версии MIMAS. Создайте профиль кандидата, выберите вакансию и начните новое интервью.</p><a className="primary" href="/?view=candidate">Открыть кабинет кандидата <ArrowRight size={16}/></a></main></div> : candidateHub ? <CandidateHub/> : employerHub || company ? <EmployerHub/> : ai ? <AIDemo/> : <Landing onCompany={() => {window.location.href = '/?view=employer';}}/>;
 }
 
 function Company() {
