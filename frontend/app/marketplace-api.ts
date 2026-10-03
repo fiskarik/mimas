@@ -19,7 +19,13 @@ export async function market<T>(path:string, options:{method?:string;token?:stri
   if(options.file){const form=new FormData();form.append('file',options.file);body=form;}
   else if(options.body!==undefined){headers['Content-Type']='application/json';body=JSON.stringify(options.body);}
   const response=await fetch('/api/market'+path,{method:options.method||'GET',headers,body,cache:'no-store'});
-  if(!response.ok){const value=await response.json().catch(()=>({}));throw new MarketError(response.status,typeof value.detail==='string'?value.detail:'Ошибка сервера ('+response.status+')');}
+  if(!response.ok){
+    const value=await response.json().catch(()=>null);
+    if(response.status>=500 && !value?.detail){
+      throw new MarketError(response.status,'Сервер MIMAS недоступен. Запустите приложение вместе с API и проверьте подключение к базе данных.');
+    }
+    throw new MarketError(response.status,typeof value?.detail==='string'?value.detail:'Ошибка сервера ('+response.status+')');
+  }
   return response.json();
 }
 export const salary=(value:number|null)=>value===null?'не указана':new Intl.NumberFormat('ru-RU').format(value)+' ₽';
