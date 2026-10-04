@@ -59,6 +59,11 @@
 .market-secret{margin-top:20px}
 .market-secret input{font-family:monospace}
 .market-selected{border-color:#bbb0f2;box-shadow:0 0 0 2px #e5dfff}
+.market-company-opportunity{position:relative}
+.market-company-opportunity>.market-opportunity-open{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;border-radius:inherit;background:transparent;cursor:pointer;z-index:1}
+.market-company-opportunity>.market-opportunity-open:disabled{cursor:default}
+.market-company-opportunity>.market-opportunity-open:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.market-company-opportunity>.button-row{position:relative;z-index:2}
 .market-source-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:15px 0}
 .market-source-tabs .selected{color:var(--accent);border-color:#bfb3ef;background:#f7f4ff}
 .market-import{background:#faf9fe;border:1px dashed #d8d0ed;border-radius:10px;padding:15px;margin-bottom:16px}
