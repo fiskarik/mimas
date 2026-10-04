@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import logging
 import os
 import secrets
 import time
@@ -11,6 +12,7 @@ from uuid import uuid4
 from xml.etree import ElementTree
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Float, ForeignKey, Integer, Text, UniqueConstraint, func, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -21,6 +23,15 @@ from ai_core.llm.factory import create_llm_provider
 from backend.companies import company_from_key
 from backend.database import Base, Database
 from backend.yandex_budget import BudgetExceeded, YandexBudget
+
+
+log = logging.getLogger(__name__)
+_TEMPLATE_PROVIDER_CODES = frozenset({
+    'access_denied', 'authentication_error', 'blocked_response', 'input_too_large',
+    'invalid_provider_response', 'invalid_request', 'model_unavailable',
+    'network_error', 'output_truncated', 'provider_error', 'rate_limit', 'timeout',
+})
+_TEMPLATE_FAILURE_DETAIL = 'AI не смог составить шаблон. Повторите попытку.'
 
 
 LEVELS = ('junior', 'middle', 'senior')
@@ -510,8 +521,14 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             draft = _validate_plan(json.loads(raw), vacancy, version)
         except BudgetExceeded:
             raise HTTPException(429, 'Месячный лимит AI исчерпан') from None
-        except (ProviderError, json.JSONDecodeError):
-            raise HTTPException(503, 'AI не смог составить шаблон. Повторите попытку.') from None
+        except ProviderError as exc:
+            code = exc.code if isinstance(exc.code, str) and exc.code in _TEMPLATE_PROVIDER_CODES else 'provider_error'
+            log.warning('template_generation_failed opportunity_id=%s code=%s', opportunity_id, code)
+            return JSONResponse(status_code=503, content={'detail': _TEMPLATE_FAILURE_DETAIL, 'code': code})
+        except json.JSONDecodeError:
+            code = 'invalid_template_json'
+            log.warning('template_generation_failed opportunity_id=%s code=%s', opportunity_id, code)
+            return JSONResponse(status_code=503, content={'detail': _TEMPLATE_FAILURE_DETAIL, 'code': code})
         row = VacancyTemplate(id=uuid4().hex, opportunity_id=opportunity_id, version=version,
                               status='draft', plan_json=draft.model_dump_json(), created=time.time(), approved=None)
         with database.session(write=True) as db:

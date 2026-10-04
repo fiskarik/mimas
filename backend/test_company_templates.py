@@ -2,7 +2,10 @@
 from contextlib import contextmanager
 from io import BytesIO
 import json
+import logging
 import zipfile
+
+import pytest
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -10,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from ai_core.llm.base import ProviderError
 from backend.database import Base
 from backend.companies import register_company_routes
 from backend.marketplace import register_marketplace_routes
@@ -148,6 +152,46 @@ def test_company_approval_claim_and_isolation(monkeypatch):
                           params={'opportunity_id': opportunity_id}).status_code == 404
         assert client.get('/api/market/company/candidates', headers=first,
                           params={'opportunity_id': opportunity_id}).json() == []
+    database.engine.dispose()
+
+
+@pytest.mark.parametrize(('failure', 'expected_code'), [
+    (ProviderError('PRIVATE_PROVIDER_BODY', 'rate_limit'), 'rate_limit'),
+    (ProviderError('PRIVATE_PROVIDER_BODY', 'PRIVATE_PROVIDER_BODY'), 'provider_error'),
+    ('{"payload": "PRIVATE_PROVIDER_BODY"', 'invalid_template_json'),
+])
+def test_template_generation_failure_has_safe_code(monkeypatch, caplog, failure, expected_code):
+    client, database = _client(monkeypatch)
+    with client:
+        company_id, claim = _company(client, 'Тест', 'test@example.com')
+        headers = _approve(client, company_id, claim)
+        vacancy = client.post('/api/market/company/opportunities', headers=headers, json={
+            'title': 'Backend', 'description': 'PRIVATE_VACANCY_TEXT',
+            'level': 'middle', 'stack': ['Python'], 'employment_type': 'full_time',
+        }).json()
+
+        class Provider:
+            async def generate(self, **kwargs):
+                if isinstance(failure, Exception):
+                    raise failure
+                return failure
+
+        monkeypatch.setattr('backend.marketplace.create_llm_provider', lambda **kwargs: Provider())
+        route = f"/api/market/company/opportunities/{vacancy['id']}/template"
+        with caplog.at_level(logging.WARNING, logger='backend.marketplace'):
+            response = client.post(route + '/draft', headers=headers)
+        assert response.status_code == 503
+        assert response.json() == {
+            'detail': 'AI не смог составить шаблон. Повторите попытку.',
+            'code': expected_code,
+        }
+        assert client.get(route, headers=headers).status_code == 404
+        logged = '\n'.join(record.getMessage() for record in caplog.records
+                           if record.name == 'backend.marketplace')
+        assert f'code={expected_code}' in logged
+        for secret in ('PRIVATE_PROVIDER_BODY', 'PRIVATE_VACANCY_TEXT', headers['X-Company-Key']):
+            assert secret not in logged
+            assert secret not in response.text
     database.engine.dispose()
 
 
