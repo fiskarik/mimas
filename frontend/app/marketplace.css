@@ -85,3 +85,8 @@
 .market-video{margin-top:19px}
 .market-video video{display:block;width:100%;max-height:310px;margin-top:12px;border-radius:8px;background:#222}
 @media(max-width:760px){.market-onboard,.market-pairs{grid-template-columns:1fr}.market-admin-row{align-items:flex-start;flex-direction:column}}
+
+.market-workbench-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 8px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.market-workbench-tabs .selected{color:var(--accent);border-color:#bfb3ef;background:#f7f4ff}
+.market-workbench .market-section{margin:22px 0 0}
+.market-empty p{margin:9px 0 15px}
