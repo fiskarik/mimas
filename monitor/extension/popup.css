@@ -1,0 +1,13 @@
+:root{font:14px/1.5 system-ui,sans-serif;color:#eef3e8;background:#101410}
+body{margin:0;width:340px}
+main{padding:20px}
+header{display:flex;align-items:center;gap:8px;font-size:17px}
+header small{margin-left:auto;font-size:10px;letter-spacing:.1em;color:#a9c193}
+.mark{color:#94c070}
+p{font-size:12px;color:#bbc4b5;margin:14px 0 22px}
+label{display:block;font-size:12px;margin-bottom:7px}
+input{box-sizing:border-box;width:100%;padding:10px;background:#202820;border:1px solid #51604c;color:white;border-radius:6px}
+button{width:100%;margin-top:11px;border:0;border-radius:6px;padding:10px;color:#13200f;background:#a4d075;font-weight:700;cursor:pointer}
+button.secondary{background:#273426;color:#e4f1d8}
+#status{margin-top:15px;font-size:12px;min-height:18px;color:#d6e8c8}
+#status.error{color:#ffad97}

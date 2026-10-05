@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "MIMAS Interview Monitor (staging)",
+  "version": "0.1.0",
+  "description": "Во время тестового интервью предупреждает об открытых вкладках известных помощников для ответов.",
+  "minimum_chrome_version": "120",
+  "permissions": ["tabs", "storage", "alarms"],
+  "host_permissions": ["https://mimas-staging.onrender.com/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "MIMAS Monitor", "default_popup": "popup.html"}
+}

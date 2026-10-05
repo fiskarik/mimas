@@ -10,6 +10,7 @@ import backend.marketplace  # noqa: F401
 import backend.companies  # noqa: F401
 import backend.media  # noqa: F401
 import backend.yandex_budget  # noqa: F401
+import backend.monitor  # noqa: F401
 
 config = context.config
 target_metadata = Base.metadata

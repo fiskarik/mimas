@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MIMAS Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header><span class="mark">●</span><strong>MIMAS Monitor</strong><small>STAGING</small></header>
+    <p>Во время интервью расширение проверяет открытые вкладки известных помощников для ответов. На сервер передаются только совпадение и его тип. Адреса остальных вкладок не передаются.</p>
+    <form id="pair-form">
+      <label for="code">Одноразовый код расширения из MIMAS</label>
+      <input id="code" name="code" autocomplete="off" spellcheck="false" required>
+      <button type="submit" id="connect">Подключить</button>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+    <button type="button" id="disconnect" class="secondary" hidden>Остановить проверку</button>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

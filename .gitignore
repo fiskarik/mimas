@@ -10,3 +10,7 @@ data/
 *.tsbuildinfo
 .idea/
 .python-libs/
+
+monitor/windows/**/bin/
+monitor/windows/**/obj/
+monitor/dist/

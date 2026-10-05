@@ -8,6 +8,7 @@ import {request,type Access,type Session} from './ai-session';
 import {useIntegrityEvents} from './use-integrity-events';
 import {IntegritySummary} from './integrity-summary';
 import {useInterviewMedia} from './use-interview-media';
+import {CandidateMonitorPanel,useCandidateMonitor} from './monitor-ui';
 
 const names:Record<string,string>={'python.core':'Python Core','python.oop':'ООП','python.asyncio':'AsyncIO','web.http':'HTTP / REST','db.postgresql':'PostgreSQL','cs.algorithms':'Алгоритмы','engineering.debugging':'Отладка'};
 const levels:Record<string,string>={basic:'Базовый',junior:'Junior',middle:'Middle',strong_middle:'Strong Middle',senior:'Senior'};
@@ -36,6 +37,7 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
   const voiceTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const {flushEvents,track}=useIntegrityEvents(access,data,busy,setError);
   const media=useInterviewMedia(linkedAccess||undefined,mediaStream);
+  const monitor=useCandidateMonitor(linkedAccess||null,data?.phase);
   const requiresVideo=Boolean(linkedAccess&&mediaStream&&!data?.report);
   const hasMicrophone=Boolean(mediaStream?.getAudioTracks().some(track=>track.readyState==='live'));
   useEffect(()=>{
@@ -69,6 +71,7 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
   async function act(action:'answers'|'start'|'finish'){
     if(!access)return;
     if(action==='start'&&requiresVideo&&!media.ready){setError('Дождитесь запуска записи камеры.');return;}
+    if(action==='start'&&linkedAccess&&data?.phase==='CREATED'&&!monitor.startReady){setError('Подтвердите проверку и подключите необходимые компоненты перед первым вопросом.');return;}
     setBusy(true);setError('');
     try{
       await flushEvents();
@@ -184,6 +187,7 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
       <div className="ai-demo-heading"><div><span className="eyebrow">MIMAS · AI-ИНТЕРВЬЮ</span><h1>{linkedOpportunity?'Интервью по вакансии':'Обсудим, как это работает.'}</h1><p className="muted">{linkedOpportunity?linkedOpportunity.title+' · '+linkedOpportunity.company_name:'Технический диалог'}</p></div><GlassOrb compact state={busy?'thinking':'idle'}/></div>
       {linkedAccess?<div className="note">Вопросы формируются для выбранной вакансии по утверждённому шаблону. Запись камеры и доступного микрофона загружается в защищённое хранилище. Распознанный ответ можно проверить и исправить до отправки.</div>:<div className="note">Вопросы можно озвучить голосом браузера. Ответы сохраняются на сервере и отправляются настроенному AI-провайдеру.</div>}
       <p className="tiny muted">Фиксируются вставка, копирование и смена фокуса окна. Эти события сами по себе не снижают оценку.</p>
+      {linkedAccess&&data&&<CandidateMonitorPanel monitor={monitor} phase={data.phase}/>}
       {mediaStream&&<section className="card ai-media-panel"><div className="ai-media-preview"><video ref={media.videoRef} autoPlay muted playsInline/><span className="ai-rec-badge"><span className={media.status==='recording'?'ai-rec-dot active':'ai-rec-dot'}/> {media.status==='recording'?'Идёт запись':media.status==='uploading'?'Загрузка видео…':media.status==='complete'?'Видео сохранено':media.status==='interrupted'?'Запись прервана':media.status==='error'?'Ошибка записи':'Подключаем запись…'}</span></div><div><p className="tiny muted">Камера обязательна для интервью. Не закрывайте вкладку, пока идёт загрузка видео.</p>{(media.status==='interrupted'||media.status==='error')&&<button className="secondary" onClick={()=>void media.retry()}>Повторить загрузку сохранённых частей</button>}</div></section>}
       {mediaStream&&!hasMicrophone&&<div role="status" className="warning">Микрофон не запустился. Видео записывается без звука; вводите ответы текстом. Для голосовых ответов проверьте устройство ввода и попробуйте обычный Chrome или Edge.</div>}
       {media.error&&<div role="status" className="warning">{media.error}</div>}
@@ -192,8 +196,8 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
       {!ready?<p>Загрузка…</p>:!access?<section className="card ai-start"><h2>Начать собеседование</h2><p className="muted">Если не знаете ответ, так и напишите — это не считается ошибочным утверждением.</p><form onSubmit={e=>{e.preventDefault();void create();}}><label>Ключ команды<input type="password" value={key} onChange={e=>setKey(e.target.value)} required/></label><button className="primary" disabled={busy}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} Начать AI-интервью</button></form></section>
       :!data?<section className="card ai-start"><p>Загружаем сессию…</p><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Повторить загрузку</button></section>
       :<><div className="ai-session-bar"><span>{data.model} · сохранено ответов: {data.answers.length}</span><button className="text-link" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={14}/> Обновить</button></div>
-        {data.phase==='CREATED'&&<button className="primary" disabled={busy||Boolean(requiresVideo&&!media.ready)} onClick={()=>void act('start')}>Получить первый вопрос</button>}
-        {data.resume_required&&<section className="card ai-start"><p>Сохранён незавершённый этап интервью. Продолжим с последней контрольной точки.</p><button className="primary" disabled={busy||Boolean(requiresVideo&&!media.ready)} onClick={()=>void act('start')}>Продолжить обработку</button></section>}
+        {data.phase==='CREATED'&&<button className="primary" disabled={busy||Boolean(requiresVideo&&!media.ready)||Boolean(linkedAccess&&!monitor.startReady)} onClick={()=>void act('start')}>Получить первый вопрос</button>}
+        {data.resume_required&&<section className="card ai-start"><p>Сохранён незавершённый этап интервью. Продолжим с последней контрольной точки.</p><button className="primary" disabled={busy||Boolean(requiresVideo&&!media.ready)||Boolean(linkedAccess&&data.phase==='CREATED'&&!monitor.startReady)} onClick={()=>void act('start')}>Продолжить обработку</button></section>}
         {data.phase==='COMPLETED'&&!data.report&&<section className="card ai-start"><h2>Интервью завершено, ожидаем запись</h2><p className="muted">Текстовые ответы сохранены. Отчёт откроется после успешной загрузки всех частей видеозаписи.</p><div className="button-row"><button className="primary" disabled={busy||!mediaStream} onClick={()=>void finalizeRecording()}>{busy?<Loader2 className="spin" size={16}/>:<Video size={16}/>} Завершить загрузку видео</button><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Проверить отчёт</button></div>{!mediaStream&&<p className="tiny muted">Вернитесь к вакансии и откройте интервью с доступом к камере, чтобы восстановить запись.</p>}</section>}
         {current&&<section className="card ai-question"><div className="section-top"><span className="badge purple">{names[current.skill]||current.skill}</span><span className="muted tiny">Вопрос {data.questions.length} · {current.type==='verification'?'Проверка утверждения':current.type==='follow_up'?'Уточнение':'Основной вопрос'}</span></div>
           <h2>{current.text}</h2><button type="button" className="secondary" onClick={speakQuestion} aria-label={speaking?'Остановить озвучивание вопроса':'Озвучить вопрос'}>{speaking?<Square size={16}/>:<Volume2 size={16}/>} {speaking?'Остановить':'Озвучить вопрос'}</button><p className="tiny muted">Голос зависит от браузера и установленных языков.</p>{current.generation==='fallback'&&<p className="tiny muted">Использован резервный вопрос из банка.</p>}

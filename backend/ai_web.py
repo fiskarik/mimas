@@ -7,7 +7,7 @@ import secrets
 import time
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import Float, Integer, Text, func, select, text
 from sqlalchemy.exc import IntegrityError
@@ -189,7 +189,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         return public_view(load(iid, x_interview_token, allow_archived=True))
 
     @app.post('/api/ai/sessions/{iid}/start')
-    async def start_ai_session(iid: str, x_interview_token: str | None = Header(None)):
+    async def start_ai_session(iid: str, request: Request, x_interview_token: str | None = Header(None)):
         async with lock_for(iid):
             row = load(iid, x_interview_token)
             if InterviewState.model_validate_json(row.state).phase == Phase.CREATED:
@@ -198,6 +198,8 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                     video = db.get(VideoRecording, iid)
                 if not video or video.status not in ('uploading', 'completed'):
                     raise HTTPException(409, 'Включите камеру и начните запись перед интервью.')
+                from backend.monitor import assert_start_ready
+                assert_start_ready(database, iid, request.headers.get('user-agent', ''))
                 engine = restore(row)
                 await engine.handle(RuntimeEvent(type='INTERVIEW_STARTED'))
                 with database.session(write=True) as db:

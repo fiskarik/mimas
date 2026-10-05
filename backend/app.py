@@ -13,6 +13,7 @@ from backend.companies import company_from_key, ensure_legacy_company, register_
 from backend.marketplace import register_marketplace_routes
 from backend.ai_web import register_ai_routes
 from backend.media import register_video_routes
+from backend.monitor import register_monitor_routes
 from ai_core.llm.factory import create_llm_provider
 
 DATA = Path(os.getenv('DATA_DIR', Path(__file__).resolve().parents[1] / 'data'))
@@ -42,6 +43,7 @@ register_company_routes(app, database)
 register_marketplace_routes(app, database, authorize_company)
 register_ai_routes(app, database, authorize_company)
 register_video_routes(app, database, authorize_company)
+register_monitor_routes(app, database)
 
 def configuration():
     try:

@@ -3,6 +3,7 @@
 import {useEffect,useState} from 'react';
 import {AnswerReport} from './answer-report';
 import {IntegritySummary} from './integrity-summary';
+import {EmployerMonitorReport} from './monitor-ui';
 import type {Session} from './ai-session';
 import {skillNames} from './marketplace-api';
 
@@ -30,5 +31,6 @@ export function EmployerReport({sessionId,companyKey}:{sessionId:string;companyK
     <h4>Подробный разбор ответов</h4>
     <AnswerReport reviews={session.report.answer_reviews||[]} rubric={session.report.scoring_rubric} names={skillNames}/>
     {session.report.integrity&&<IntegritySummary report={session.report.integrity} questions={session.questions}/>}
+    <EmployerMonitorReport sessionId={sessionId} companyKey={companyKey}/>
   </div>;
 }
