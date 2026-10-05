@@ -6,6 +6,14 @@ import AIDemo from './ai-demo';
 import type {Access} from './ai-session';
 import {assessmentFor,levelLabels,market,MarketError,salaryRange,type Level,type MyProfile,type Opportunity} from './marketplace-api';
 
+function cameraError(error:unknown):Error{
+  const name=error instanceof DOMException?error.name:'';
+  if(name==='NotAllowedError'||name==='PermissionDeniedError')return new Error('Разрешите доступ к камере в настройках браузера и Windows, затем повторите попытку.');
+  if(name==='NotFoundError'||name==='DevicesNotFoundError')return new Error('Камера не найдена. Подключите её и повторите попытку.');
+  if(name==='NotReadableError'||name==='TrackStartError')return new Error('Камеру не удалось запустить. Закройте приложения, использующие её, и попробуйте обычный Chrome или Edge.');
+  return new Error('Не удалось включить камеру. Проверьте её подключение и разрешения браузера.');
+}
+
 export function CandidateHub(){
   const [token,setToken]=useState('');
   const [loaded,setLoaded]=useState(false);
@@ -51,7 +59,13 @@ export function CandidateHub(){
     try{
       if(!finished){
         if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для интервью нужен браузер с доступом к камере и микрофону.');
-        camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
+        try{
+          camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
+        }catch{
+          // The camera is required; if audio cannot start, text answers still work with silent video.
+          try{camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});}
+          catch(error){throw cameraError(error);}
+        }
         if(!camera.getVideoTracks().length)throw new Error('Камера не подключена. Без неё начать интервью нельзя.');
       }
       const response=await fetch('/api/ai/sessions',{method:'POST',headers:{'X-Candidate-Token':token,'Content-Type':'application/json'},body:JSON.stringify({opportunity_id:job.id,consent:true}),cache:'no-store'});
@@ -94,10 +108,10 @@ export function CandidateHub(){
           })}</div>}
         </section>
         {historical.length>0&&<section className="market-section"><div className="market-heading"><div><span className="eyebrow">02 / ИСТОРИЯ</span><h2>Мои прежние интервью</h2></div></div><div className="market-list">{historical.map(([id,assessment])=>{const past=me.assessment_opportunities?.[id]||{id,title:'Вакансия больше не опубликована',company_name:'Компания',status:'closed'};const done=Boolean(assessment.report||assessment.phase==='COMPLETED'||assessment.status==='completed');return <article className="card market-opportunity" key={id}><span className="eyebrow">{past.company_name}</span><h3>{past.title}</h3><span className="badge">{past.status==='closed'?'Вакансия закрыта':'Вакансия недоступна'}</span><p className="muted">Ваше интервью и отчёт сохраняются даже после закрытия вакансии.</p>{done?<button className="secondary" disabled={busy} onClick={()=>void openInterview(past,true)}>Открыть отчёт <ArrowRight size={16}/></button>:<button className="secondary" disabled={busy} onClick={()=>{setConsentJob(past);setConsent(false);}}>Продолжить интервью <ArrowRight size={16}/></button>}</article>;})}</div></section>}
-        {consentJob&&<section className="card market-assessment" aria-labelledby="market-consent-title"><span className="eyebrow">02 / ПЕРЕД ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS включит камеру и микрофон, запишет видео и ответы, передаст их для AI-оценки. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек.</p>
+        {consentJob&&<section className="card market-assessment" aria-labelledby="market-consent-title"><span className="eyebrow">02 / ПЕРЕД ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS запросит доступ к камере и микрофону, запишет видео и ответы, передаст их для AI-оценки. Камера обязательна; если микрофон недоступен, видео сохранится без звука, а ответы можно ввести текстом. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек.</p>
           <label className="market-consent"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/> Я согласен(на) на запись интервью и передачу результата этой компании.</label>
           <div className="button-row"><button className="primary" disabled={busy||!consent} onClick={()=>void openInterview(consentJob)}>{busy?<Loader2 size={17} className="spin"/>:<Video size={17}/>} Разрешить камеру и начать</button><button className="secondary" disabled={busy} onClick={()=>setConsentJob(null)}>Отмена</button></div>
-          <p className="tiny muted">Если доступ к камере или микрофону запрещён, интервью не начнётся. Распознанный текст ответа можно исправить перед отправкой.</p>
+          <p className="tiny muted">Если доступ к камере запрещён, интервью не начнётся. Распознанный текст ответа можно исправить перед отправкой.</p>
         </section>}
       </>}
       <p className="market-footer"><ShieldCheck size={15}/> AI-оценка носит предварительный характер.</p>

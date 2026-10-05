@@ -121,7 +121,8 @@ class RecordingController{
       return;
     }
     if(previous?.completed){this.completed=true;this.onStatus('complete');return;}
-    const type=['video/webm;codecs=vp8,opus','video/webm'].find(value=>MediaRecorder.isTypeSupported(value));
+    const formats=this.stream.getAudioTracks().length?['video/webm;codecs=vp8,opus','video/webm']:['video/webm;codecs=vp8','video/webm'];
+    const type=formats.find(value=>MediaRecorder.isTypeSupported(value));
     if(!type)throw new Error('Браузер не поддерживает запись видео. Попробуйте Chrome или Edge.');
     await writeOne('meta',{sessionId:this.id,partSize:this.partSize,started:true,completed:false,uploadId:this.uploadId} satisfies StoredMeta);
     this.recorder=new MediaRecorder(this.stream,{mimeType:type,videoBitsPerSecond:750000});
