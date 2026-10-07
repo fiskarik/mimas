@@ -124,6 +124,8 @@ def test_two_candidates_same_vacancy_and_tenant_isolation(monkeypatch):
             assert opened.status_code == 200, opened.text
             question = opened.json()['current_question']
             assert question
+            assert question['text'] == PLAN['skills'][0]['questions'][0]
+            assert question['generation'] == 'approved_template'
             answered = client.post(prefix + '/answers', headers=access,
                                    json={'question_id': question['id'], 'text': 'я не знаю'})
             assert answered.status_code == 200, answered.text

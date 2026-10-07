@@ -6,6 +6,7 @@ from ai_core.reports.answer_review import RUBRIC, review_answer
 def generate_report(state: InterviewState, *, mode: str) -> dict:
     if state.phase != Phase.COMPLETED:
         raise ValueError('Report requires a completed interview')
+    skill_names = {skill.id: skill.name for skill in state.plan_snapshot.skills} if state.plan_snapshot else {}
     skills = []
     for skill in state.skills:
         turns = [t for t in state.turns if t.question.skill == skill.skill]
@@ -13,7 +14,7 @@ def generate_report(state: InterviewState, *, mode: str) -> dict:
                       and t.evaluation.result.correctness == 'correct'
                       and t.evaluation.result.depth in ('medium', 'high')
                       and not t.evaluation.result.missing_concepts
-                      and t.question.generation == 'llm']
+                      and t.question.generation in ('llm', 'approved_template')]
         positive = [e for e in skill.evidence if e.type == 'positive']
         problems = any(m.status != 'resolved' for m in skill.misconceptions) or any(c.skill == skill.skill and c.status != 'resolved' for c in state.contradictions)
         level = None
@@ -24,7 +25,8 @@ def generate_report(state: InterviewState, *, mode: str) -> dict:
             level = list(Level)[min(difficulty - 1, list(Level).index(skill.target_level))].value
         skills.append({
             'runtime_status': skill.status,
-            'skill': skill.skill, 'demonstrated_level': level,
+            'skill': skill.skill, 'name': skill_names.get(skill.skill, skill.skill),
+            'demonstrated_level': level,
             'conclusion_scope': 'Только проверенные темы; предварительное правило агрегации v1.',
             'status': 'provisional' if level else 'insufficient_evidence',
             'questions_asked': skill.questions_asked, 'answers_received': len(turns),
@@ -45,5 +47,14 @@ def generate_report(state: InterviewState, *, mode: str) -> dict:
             'answer_reviews': [review_answer(t) for t in state.turns],
             'role': state.config.role, 'target_level': state.config.target_level.value,
             'stop_reason': state.stop_reason, 'skills': skills,
-            'overall_technical_summary': f'Получено {len(state.turns)} ответов. Выводы ограничены проверенными темами; неопределённость сохранена.',
+            'overall_technical_summary': f'{_answer_count_summary(len(state.turns))}. Выводы ограничены проверенными темами; неопределённость сохранена.',
             'quality_status': 'prototype_not_expert_validated'}
+
+
+def _answer_count_summary(count: int) -> str:
+    if count % 100 in (11, 12, 13, 14):
+        noun = 'ответов'
+    else:
+        noun = {1: 'ответ', 2: 'ответа', 3: 'ответа', 4: 'ответа'}.get(count % 10, 'ответов')
+    verb = 'Получен' if noun == 'ответ' else 'Получено'
+    return f'{verb} {count} {noun}'

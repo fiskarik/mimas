@@ -47,6 +47,40 @@ def test_overloaded_question_retries_then_uses_reviewed_bank():
     assert q.text == skill.questions[0]
 
 
+def test_approved_vacancy_primary_questions_skip_generation_without_repeating():
+    plan = load_plan()
+    provider = FakeLLMProvider([])
+
+    async def scenario():
+        engine = InterviewEngine(provider, plan=plan, approved_primary_questions=True)
+        first = await engine.start()
+        assert first.text == plan.skills[0].questions[0]
+        assert first.generation == 'approved_template'
+
+        second = await engine.submit(first.id, 'я не знаю')
+        assert second.text == plan.skills[0].questions[1]
+        assert second.generation == 'approved_template'
+        assert second.parent_id is None
+        assert not provider.calls
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(('kind', 'action'), [
+    ('follow_up', 'FOLLOW_UP'), ('verification', 'VERIFY_KNOWLEDGE'),
+])
+def test_approved_vacancy_follow_ups_and_verifications_stay_dynamic(kind, action):
+    skill = load_plan().skills[0]
+    provider = FakeLLMProvider([json.dumps({'text': 'Уточните ответ на примере?'})])
+    spec = QuestionSpec(skill=skill.id, difficulty=2, type=kind,
+                        goal=skill.goals[0], parent_id='previous', action=action)
+    question = asyncio.run(QuestionGenerator(provider, approved_primary_questions=True).generate(
+        spec, skill, Level.MIDDLE, [], [], [], 0))
+    assert question.generation == 'llm'
+    assert question.parent_id == 'previous'
+    assert len(provider.calls) == 1
+
+
 def test_refusal_moves_to_another_goal_not_repeated_demand():
     async def scenario():
         provider = FakeLLMProvider([json.dumps({'text':'Когда создаётся значение по умолчанию?'}),

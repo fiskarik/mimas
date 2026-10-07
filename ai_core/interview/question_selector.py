@@ -28,8 +28,9 @@ log = logging.getLogger(__name__)
 
 
 class QuestionGenerator:
-    def __init__(self, provider: LLMProvider):
+    def __init__(self, provider: LLMProvider, *, approved_primary_questions: bool = False):
         self.provider = provider
+        self.approved_primary_questions = approved_primary_questions
 
     async def generate(self, spec: QuestionSpec, competency: Competency, level: Level,
                        history: list[Question], evidence: list[dict], misconceptions: list[dict],
@@ -43,6 +44,12 @@ class QuestionGenerator:
                      else 'follow_up' if spec.parent_id else 'question')
         if spec.parent_id:
             payload['reference_question'] = spec.goal
+        elif self.approved_primary_questions and spec.action == 'ASK_QUESTION':
+            # The employer has already reviewed this question as part of the
+            # immutable vacancy plan. No second LLM request is needed here.
+            reviewed = competency.questions[primary_index % len(competency.questions)]
+            if reviewed not in payload['previous_questions']:
+                return Question(**spec.model_dump(), text=reviewed, generation='approved_template')
         for attempt in range(1, 3):
             try:
                 raw = await self.provider.generate(system=SYSTEM, payload=payload,

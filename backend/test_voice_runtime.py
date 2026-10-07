@@ -5,10 +5,12 @@ import json
 from types import SimpleNamespace
 import time
 
+import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from ai_core.interview.state import Phase
+from ai_core.llm.base import ProviderError
 from backend import voice_runtime as voice
 
 
@@ -31,9 +33,16 @@ class FakeBudget:
 
 
 class FakeUpstream:
-    def __init__(self, kind, questions):
+    def __init__(self, kind, questions, segments=None, inter_segment_delay=0,
+                 last_transcription_delay=0, fail_last_transcription=False,
+                 drop_last_transcription=False):
         self.kind = kind
         self.questions = questions
+        self.segments = segments or ['Мой голосовой ответ.']
+        self.inter_segment_delay = inter_segment_delay
+        self.last_transcription_delay = last_transcription_delay
+        self.fail_last_transcription = fail_last_transcription
+        self.drop_last_transcription = drop_last_transcription
         self.queue = asyncio.Queue()
         self.sent = []
         self.response_number = 0
@@ -69,14 +78,26 @@ class FakeUpstream:
                                       'input_token_details': {'text_tokens': 30},
                                       'output_token_details': {'text_tokens': 20}}}})
         elif self.kind == 'stt' and event['type'] == 'input_audio_buffer.append':
-            await self.queue.put({'type': 'input_audio_buffer.speech_started'})
-            await self.queue.put({'type': 'input_audio_buffer.speech_stopped', 'item_id': 'spoken-1'})
-            await self.queue.put({'type': 'response.created',
-                                  'response': {'id': 'unwanted-reply'}})
-            await self.queue.put({'type': 'conversation.item.input_audio_transcription.completed',
-                                  'item_id': 'spoken-1', 'transcript': 'Мой голосовой ответ.'})
-            await self.queue.put({'type': 'conversation.item.input_audio_transcription.completed',
-                                  'item_id': 'spoken-1', 'transcript': 'Мой голосовой ответ.'})
+            for index, transcript in enumerate(self.segments):
+                if index:
+                    await asyncio.sleep(self.inter_segment_delay)
+                item_id = f'spoken-{index + 1}'
+                await self.queue.put({'type': 'input_audio_buffer.speech_started'})
+                await self.queue.put({'type': 'input_audio_buffer.speech_stopped', 'item_id': item_id})
+                await self.queue.put({'type': 'response.created',
+                                      'response': {'id': 'unwanted-reply'}})
+                if index == len(self.segments) - 1 and self.last_transcription_delay:
+                    await asyncio.sleep(self.last_transcription_delay)
+                if index == len(self.segments) - 1 and self.drop_last_transcription:
+                    continue
+                if index == len(self.segments) - 1 and self.fail_last_transcription:
+                    await self.queue.put({'type': 'conversation.item.input_audio_transcription.failed',
+                                          'item_id': item_id})
+                else:
+                    await self.queue.put({'type': 'conversation.item.input_audio_transcription.completed',
+                                          'item_id': item_id, 'transcript': transcript})
+                    await self.queue.put({'type': 'conversation.item.input_audio_transcription.completed',
+                                          'item_id': item_id, 'transcript': transcript})
 
 
 def _fake_state(question, pending=None):
@@ -127,6 +148,7 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
 
     monkeypatch.setenv('YANDEX_API_KEY', 'secret')
     monkeypatch.setenv('YANDEX_FOLDER_ID', 'folder')
+    monkeypatch.setattr(voice, 'ANSWER_SILENCE_SECONDS', 0.03)
     monkeypatch.setattr(voice, 'InterviewState', FakeState)
     monkeypatch.setattr(voice, 'YandexBudget', lambda _: budget)
     monkeypatch.setattr(voice, 'connect', fake_connect)
@@ -179,6 +201,136 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
     assert not budget.released
 
 
+def test_voice_bridge_combines_segments_before_one_submission(monkeypatch):
+    question = SimpleNamespace(id='q1', text='Объясните порядок действий.')
+    row = SimpleNamespace(state='fake-state', pending=None, started=time.time())
+    upstreams = []
+    submitted = []
+
+    class FakeState:
+        @staticmethod
+        def model_validate_json(_):
+            return _fake_state(question)
+
+    def fake_connect(url, **kwargs):
+        stream = FakeUpstream('stt' if not upstreams else 'tts', [question],
+                              segments=['Сначала проверю данные,', 'затем предложу решение.'],
+                              inter_segment_delay=0.02, last_transcription_delay=0.12)
+        upstreams.append(stream)
+        return stream
+
+    async def submit(iid, answer, token):
+        submitted.append(answer)
+        return {'phase': Phase.COMPLETED}
+
+    monkeypatch.setenv('YANDEX_API_KEY', 'secret')
+    monkeypatch.setenv('YANDEX_FOLDER_ID', 'folder')
+    monkeypatch.setattr(voice, 'ANSWER_SILENCE_SECONDS', 0.08)
+    monkeypatch.setattr(voice, 'InterviewState', FakeState)
+    monkeypatch.setattr(voice, 'YandexBudget', lambda _: FakeBudget())
+    monkeypatch.setattr(voice, 'connect', fake_connect)
+    app = FastAPI()
+    voice.register_voice_route(app, None, lambda iid, token: row,
+                               lambda _: {'phase': Phase.WAITING_FOR_ANSWER}, submit)
+
+    with TestClient(app) as client:
+        with client.websocket_connect('/api/ai/sessions/interview/voice') as ws:
+            ws.send_json({'type': 'auth', 'token': 'candidate-token'})
+            assert ws.receive_json()['type'] == 'ready'
+            assert ws.receive_json()['type'] == 'state'
+            assert ws.receive_json()['speaker'] == 'mimas'
+            while ws.receive_json()['type'] != 'speech_stopped':
+                pass
+            ws.send_json({'type': 'playback_done'})
+            ws.send_json({'type': 'audio', 'audio': base64.b64encode(b'\x00\x00' * 100).decode()})
+            events = [ws.receive_json() for _ in range(6)]
+            assert [event['type'] for event in events] == [
+                'speech_started', 'speech_stopped', 'speech_started', 'speech_stopped',
+                'transcript', 'state']
+            assert events[4] == {'type': 'transcript', 'speaker': 'candidate',
+                                 'text': 'Сначала проверю данные, затем предложу решение.'}
+            ws.send_json({'type': 'stop'})
+
+    assert len(submitted) == 1
+    assert submitted[0].question_id == question.id
+    assert submitted[0].text == 'Сначала проверю данные, затем предложу решение.'
+
+
+@pytest.mark.parametrize('stt_fails, ai_fails, stt_times_out', [
+    (True, False, False), (False, True, False), (False, False, True)])
+def test_voice_bridge_error_keeps_complete_answer_or_requests_retry(
+        monkeypatch, stt_fails, ai_fails, stt_times_out):
+    question = SimpleNamespace(id='q1', text='Расскажите о работе.')
+    row = SimpleNamespace(state='fake-state', pending=None, started=time.time())
+    upstreams = []
+    submitted = []
+
+    class FakeState:
+        @staticmethod
+        def model_validate_json(_):
+            return _fake_state(question)
+
+    def fake_connect(url, **kwargs):
+        stream = FakeUpstream('stt' if not upstreams else 'tts', [question],
+                              segments=['Первая часть.', 'Вторая часть.'] if (stt_fails or stt_times_out) else None,
+                              inter_segment_delay=0.02,
+                              fail_last_transcription=stt_fails,
+                              drop_last_transcription=stt_times_out)
+        upstreams.append(stream)
+        return stream
+
+    async def submit(iid, answer, token):
+        # The real answer endpoint checkpoints before calling the provider.
+        row.pending = answer
+        submitted.append(answer)
+        if ai_fails:
+            raise ProviderError('Temporary model error', retryable=True)
+        return {'phase': Phase.COMPLETED}
+
+    monkeypatch.setenv('YANDEX_API_KEY', 'secret')
+    monkeypatch.setenv('YANDEX_FOLDER_ID', 'folder')
+    monkeypatch.setattr(voice, 'ANSWER_SILENCE_SECONDS', 0.05)
+    monkeypatch.setattr(voice, 'TRANSCRIPTION_TIMEOUT_SECONDS', 0.07)
+    monkeypatch.setattr(voice, 'InterviewState', FakeState)
+    monkeypatch.setattr(voice, 'YandexBudget', lambda _: FakeBudget())
+    monkeypatch.setattr(voice, 'connect', fake_connect)
+    app = FastAPI()
+    voice.register_voice_route(app, None, lambda iid, token: row,
+                               lambda _: {'phase': Phase.WAITING_FOR_ANSWER}, submit)
+
+    with TestClient(app) as client:
+        with client.websocket_connect('/api/ai/sessions/interview/voice') as ws:
+            ws.send_json({'type': 'auth', 'token': 'candidate-token'})
+            assert ws.receive_json()['type'] == 'ready'
+            assert ws.receive_json()['type'] == 'state'
+            assert ws.receive_json()['speaker'] == 'mimas'
+            while ws.receive_json()['type'] != 'speech_stopped':
+                pass
+            ws.send_json({'type': 'playback_done'})
+            ws.send_json({'type': 'audio', 'audio': base64.b64encode(b'\x00\x00' * 100).decode()})
+            events = []
+            while True:
+                event = ws.receive_json()
+                events.append(event)
+                if event['type'] == 'error':
+                    break
+            if stt_fails or stt_times_out:
+                time.sleep(0.08)
+                ws.send_json({'type': 'stop'})
+
+    if stt_fails or stt_times_out:
+        assert not submitted
+        assert not any(event['type'] == 'transcript' for event in events)
+        assert 'Повторите ответ целиком' in events[-1]['message']
+    else:
+        assert len(submitted) == 1
+        assert submitted[0].text == 'Мой голосовой ответ.'
+        assert row.pending.text == submitted[0].text
+        assert any(event == {'type': 'transcript', 'speaker': 'candidate',
+                             'text': submitted[0].text} for event in events)
+        assert 'Ответ сохранён' in events[-1]['message']
+
+
 def test_voice_spend_reserves_windows_before_audio_and_releases_idle():
     budget = FakeBudget()
 
@@ -201,6 +353,7 @@ def test_voice_spend_reserves_windows_before_audio_and_releases_idle():
 
 def test_speech_mismatch_is_rejected():
     assert voice._session_update(transcribe=False)['session']['audio']['output']['voice'] == 'dasha'
+    assert voice._session_update(transcribe=True)['session']['audio']['input']['languages'] == ['ru-RU']
     assert voice._spoken_matches_question('Расскажите про FastAPI!', 'Расскажите про FastAPI.')
     assert voice._spoken_matches_question('Что такое Фаст АПИ?', 'Что такое FastAPI?')
     assert not voice._spoken_matches_question('Вот ответ про FastAPI.', 'Расскажите про FastAPI.')

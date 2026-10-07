@@ -29,6 +29,10 @@ LOGGER = logging.getLogger(__name__)
 SAMPLE_RATE = 44100
 PCM_BYTES_PER_SECOND = SAMPLE_RATE * 2
 MAX_AUDIO_CHUNK_BYTES = PCM_BYTES_PER_SECOND * 2
+# VAD closes one speech segment after 1 second. Wait another 1.5 seconds
+# before treating it as a complete answer, so brief pauses remain one turn.
+ANSWER_SILENCE_SECONDS = 1.5
+TRANSCRIPTION_TIMEOUT_SECONDS = 10.0
 # Provider output deltas are not microphone frames: one delta can contain
 # several seconds of speech. Bound it separately, then forward small frames.
 MAX_TTS_DELTA_BYTES = 8 * 1024 * 1024
@@ -150,6 +154,7 @@ def _session_update(*, transcribe: bool) -> dict:
             'audio': {
                 'input': {
                     'format': {'type': 'audio/pcm', 'rate': SAMPLE_RATE},
+                    **({'languages': ['ru-RU']} if transcribe else {}),
                     'turn_detection': (
                         {'type': 'server_vad', 'threshold': 0.5, 'silence_duration_ms': 1000}
                         if transcribe else None
@@ -302,6 +307,43 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                 seen_items: set[str] = set()
                 utterance_questions: dict[str, str] = {}
                 spoken_question: str | None = None
+                stt_events: asyncio.Queue[dict] = asyncio.Queue()
+                answer_segments: list[tuple[int, str]] = []
+                segment_numbers: dict[str, int] = {}
+                pending_transcriptions: set[str] = set()
+                next_segment_number = 0
+                speech_active = False
+                last_speech_stop = 0.0
+                flush_generation = 0
+                flush_task: asyncio.Task | None = None
+
+                def cancel_answer_flush():
+                    nonlocal flush_generation, flush_task
+                    flush_generation += 1
+                    if flush_task is not None:
+                        flush_task.cancel()
+                        flush_task = None
+
+                def schedule_answer_flush():
+                    nonlocal flush_task
+                    cancel_answer_flush()
+                    if speech_active or not listening or not last_speech_stop:
+                        return
+                    generation = flush_generation
+                    if pending_transcriptions:
+                        delay = max(0, last_speech_stop + TRANSCRIPTION_TIMEOUT_SECONDS - time.monotonic())
+                        event_type = '_transcription_timeout'
+                    elif answer_segments:
+                        delay = max(0, last_speech_stop + ANSWER_SILENCE_SECONDS - time.monotonic())
+                        event_type = '_flush_answer'
+                    else:
+                        return
+
+                    async def enqueue_flush():
+                        await asyncio.sleep(delay)
+                        await stt_events.put({'type': event_type, 'generation': generation})
+
+                    flush_task = asyncio.create_task(enqueue_flush())
 
                 async def stt_send(payload: dict):
                     async with stt_send_lock:
@@ -313,6 +355,13 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
 
                 async def speak(question):
                     nonlocal current_question, speaking, listening, spoken_question, awaiting_playback
+                    nonlocal speech_active, last_speech_stop
+                    cancel_answer_flush()
+                    answer_segments.clear()
+                    segment_numbers.clear()
+                    pending_transcriptions.clear()
+                    speech_active = False
+                    last_speech_stop = 0.0
                     current_question = question
                     speaking = True
                     listening = False
@@ -361,17 +410,31 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         await stt_send({'type': 'input_audio_buffer.append',
                                         'audio': event['audio']})
 
-                async def receive_stt():
-                    nonlocal listening
+                async def pump_stt():
                     async for packet in stt:
-                        event = json.loads(packet)
+                        await stt_events.put(json.loads(packet))
+                    raise VoiceProtocolError('Соединение с распознаванием речи прервалось.')
+
+                async def receive_stt():
+                    nonlocal listening, speech_active, last_speech_stop, next_segment_number
+                    while True:
+                        event = await stt_events.get()
                         kind = event.get('type')
                         if kind == 'input_audio_buffer.speech_started' and listening:
+                            speech_active = True
+                            cancel_answer_flush()
                             await send({'type': 'speech_started'})
                         elif kind == 'input_audio_buffer.speech_stopped' and listening:
+                            speech_active = False
+                            last_speech_stop = time.monotonic()
                             item_id = event.get('item_id')
-                            if isinstance(item_id, str):
+                            if isinstance(item_id, str) and item_id not in seen_items:
                                 utterance_questions[item_id] = current_question.id
+                                if item_id not in segment_numbers:
+                                    segment_numbers[item_id] = next_segment_number
+                                    next_segment_number += 1
+                                pending_transcriptions.add(item_id)
+                            schedule_answer_flush()
                             await send({'type': 'speech_stopped'})
                         elif kind == 'response.created':
                             # Server VAD creates replies even for a transcript-only socket.
@@ -384,21 +447,60 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             if not isinstance(item_id, str) or item_id in seen_items:
                                 continue
                             seen_items.add(item_id)
-                            if len(seen_items) > 128:
-                                seen_items.clear()
-                                seen_items.add(item_id)
                             question_id = utterance_questions.pop(item_id, current_question.id)
+                            pending_transcriptions.discard(item_id)
                             transcript = (event.get('transcript') or '').strip()
                             if not transcript or not listening or question_id != current_question.id:
+                                schedule_answer_flush()
                                 continue
-                            if len(transcript) > 16000:
+                            combined_length = (sum(len(part) for _, part in answer_segments)
+                                               + len(answer_segments) + len(transcript))
+                            if combined_length > 16000:
+                                seen_items.update(pending_transcriptions)
+                                pending_transcriptions.clear()
+                                answer_segments.clear()
+                                segment_numbers.clear()
+                                cancel_answer_flush()
                                 await send({'type': 'error', 'message': 'Ответ слишком длинный. Повторите его короче.'})
                                 continue
+                            if item_id not in segment_numbers:
+                                segment_numbers[item_id] = next_segment_number
+                                next_segment_number += 1
+                            answer_segments.append((segment_numbers.pop(item_id), transcript))
+                            schedule_answer_flush()
+                        elif kind == 'conversation.item.input_audio_transcription.failed':
+                            item_id = event.get('item_id')
+                            if isinstance(item_id, str):
+                                seen_items.add(item_id)
+                            # Never assess only the successful fragments of an answer.
+                            seen_items.update(pending_transcriptions)
+                            pending_transcriptions.clear()
+                            answer_segments.clear()
+                            segment_numbers.clear()
+                            cancel_answer_flush()
+                            await send({'type': 'error', 'message': 'Часть ответа не распознана. Повторите ответ целиком.'})
+                        elif kind == '_transcription_timeout':
+                            if (event.get('generation') != flush_generation or not listening
+                                    or speech_active or not pending_transcriptions):
+                                continue
+                            seen_items.update(pending_transcriptions)
+                            pending_transcriptions.clear()
+                            answer_segments.clear()
+                            segment_numbers.clear()
+                            cancel_answer_flush()
+                            await send({'type': 'error', 'message': 'Распознавание задержалось. Повторите ответ целиком.'})
+                        elif kind == '_flush_answer':
+                            if (event.get('generation') != flush_generation or not listening
+                                    or speech_active or pending_transcriptions or not answer_segments):
+                                continue
                             listening = False
+                            cancel_answer_flush()
+                            transcript = ' '.join(part for _, part in sorted(answer_segments))
+                            answer_segments.clear()
                             await send({'type': 'transcript', 'speaker': 'candidate', 'text': transcript})
                             try:
                                 result = await submit_answer(
-                                    iid, CandidateAnswer(question_id=question_id, text=transcript), token)
+                                    iid, CandidateAnswer(question_id=current_question.id, text=transcript), token)
                             except (HTTPException, BudgetExceeded, ProviderError) as exc:
                                 # The answer endpoint checkpoints the transcript before
                                 # provider I/O. Reconnect can resume a pending answer.
@@ -414,7 +516,6 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                 await send({'type': 'speech_stopped'})
                         elif kind == 'error':
                             raise VoiceProtocolError('Распознавание речи временно недоступно.')
-                    raise VoiceProtocolError('Соединение с распознаванием речи прервалось.')
 
                 async def receive_tts():
                     nonlocal speaking, listening, spoken_question, awaiting_playback
@@ -446,6 +547,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
 
                 tasks = [
                     asyncio.create_task(receive_client()),
+                    asyncio.create_task(pump_stt()),
                     asyncio.create_task(receive_stt()),
                     asyncio.create_task(receive_tts()),
                 ]
@@ -454,6 +556,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                     for task in finished:
                         task.result()
                 finally:
+                    cancel_answer_flush()
                     for task in tasks:
                         if not task.done():
                             task.cancel()

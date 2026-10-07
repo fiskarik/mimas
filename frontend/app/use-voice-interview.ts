@@ -57,6 +57,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
   const awaitingPlayback=useRef(false);
   const finished=useRef(false);
   const interrupted=useRef(false);
+  const sendingAudio=useRef(false);
 
   const stopPlayback=useCallback(()=>{
     if(listenTimer.current){clearTimeout(listenTimer.current);listenTimer.current=null;}
@@ -64,13 +65,14 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
     playing.current.clear();playbackAt.current=audio.current?.currentTime||0;
   },[]);
   const stopGraph=useCallback(()=>{
+    sendingAudio.current=false;
     processor.current?.disconnect();input.current?.disconnect();sink.current?.disconnect();
     processor.current=null;input.current=null;sink.current=null;stopPlayback();
     const context=audio.current;audio.current=null;
     if(context&&context.state!=='closed')void context.close();
   },[stopPlayback]);
   const disconnect=useCallback(()=>{
-    closed.current=true;generation.current++;
+    closed.current=true;generation.current++;sendingAudio.current=false;
     const current=socket.current;socket.current=null;
     if(current?.readyState===WebSocket.OPEN)current.send(JSON.stringify({type:'stop'}));
     current?.close();stopGraph();
@@ -88,7 +90,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       setError('Микрофон недоступен. Разрешите доступ к нему в браузере и повторите подключение.');
       return;
     }
-    if(socket.current)disconnect();closed.current=false;finished.current=false;awaitingPlayback.current=false;interrupted.current=false;setError('');setLines([]);setPhase('connecting');
+    if(socket.current)disconnect();closed.current=false;finished.current=false;awaitingPlayback.current=false;interrupted.current=false;sendingAudio.current=false;setError('');setLines([]);setPhase('connecting');
     prepare();
     const protocol=window.location.protocol==='https:'?'wss:':'ws:';
     const url=protocol+'//'+window.location.host+'/api/ai/sessions/'+encodeURIComponent(access.id)+'/voice';
@@ -113,7 +115,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
             const mutedSink=context.createGain();mutedSink.gain.value=0;mutedSink.connect(context.destination);
             input.current=source;sink.current=mutedSink;
             const send=(samples:Float32Array)=>{
-              if(epoch!==generation.current||mutedRef.current||current.readyState!==WebSocket.OPEN||context.currentTime<playbackAt.current+0.16)return;
+              if(epoch!==generation.current||!sendingAudio.current||mutedRef.current||current.readyState!==WebSocket.OPEN||context.currentTime<playbackAt.current+0.16)return;
               if(current.bufferedAmount>1024*1024){
                 if(!congestion.current){congestion.current=true;setError('Сеть замедлилась. Часть звука не отправляется; проверьте соединение.');}
                 return;
@@ -142,6 +144,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       }
       if(message.type==='audio'&&message.audio){
         awaitingPlayback.current=true;
+        sendingAudio.current=false;
         if(listenTimer.current){clearTimeout(listenTimer.current);listenTimer.current=null;}
         const context=audio.current;if(!context)return;
         try{
@@ -156,14 +159,14 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       if(message.type==='transcript'&&message.text&&(message.speaker==='candidate'||message.speaker==='mimas')){
         const speaker=message.speaker;
         setLines(previous=>[...previous,{speaker,text:message.text!,id:++sequence.current}]);
-        if(speaker==='candidate')setPhase('thinking');
+        if(speaker==='candidate'){sendingAudio.current=false;setPhase('thinking');}
         else awaitingPlayback.current=true;
         return;
       }
       if(message.type==='state'&&message.session){
         callback.current(message.session);
         if(message.session.phase==='COMPLETED'){
-          finished.current=true;setPhase('completed');processor.current?.disconnect();input.current?.disconnect();
+          finished.current=true;sendingAudio.current=false;setPhase('completed');processor.current?.disconnect();input.current?.disconnect();
         }
         return;
       }
@@ -174,12 +177,12 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       if(message.type==='speech_stopped'){
         if(finished.current)return;
         if(interrupted.current){interrupted.current=false;setPhase('listening');return;}
-        if(!awaitingPlayback.current){setPhase('thinking');return;}
+        if(!awaitingPlayback.current){setPhase('listening');return;}
         if(listenTimer.current)clearTimeout(listenTimer.current);
         const delay=Math.max(0,(playbackAt.current-(audio.current?.currentTime||0))*1000)+160;
         listenTimer.current=setTimeout(()=>{
           listenTimer.current=null;awaitingPlayback.current=false;
-          if(current.readyState===WebSocket.OPEN)current.send(JSON.stringify({type:'playback_done'}));
+          if(current.readyState===WebSocket.OPEN){current.send(JSON.stringify({type:'playback_done'}));sendingAudio.current=true;}
           setPhase('listening');
         },delay);
         return;
@@ -196,6 +199,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
     if(socket.current?.readyState===WebSocket.OPEN){
       socket.current.send(JSON.stringify({type:'interrupt'}));
       socket.current.send(JSON.stringify({type:'playback_done'}));
+      sendingAudio.current=true;
     }
     setPhase('listening');
   },[stopPlayback]);

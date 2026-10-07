@@ -34,7 +34,7 @@ class QuestionSpec(Model):
 class Question(QuestionSpec):
     id: str = Field(default_factory=lambda: uuid4().hex)
     text: Text
-    generation: Literal['llm', 'fallback', 'scripted'] = 'llm'
+    generation: Literal['llm', 'fallback', 'scripted', 'approved_template'] = 'llm'
 
 
 class GeneratedQuestion(Model):

@@ -3,11 +3,38 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
+
+import pytest
 
 from ai_core.interview.engine import InterviewEngine
 from ai_core.interview.schemas import Limits
+from ai_core.interview.state import Phase
 from ai_core.llm.provider import FakeLLMProvider
-from ai_core.reports.generator import generate_report
+from ai_core.reports.generator import _answer_count_summary, generate_report
+from backend.ai_presenter import session_view
+
+
+@pytest.mark.parametrize(('count', 'summary'), [
+    (0, 'Получено 0 ответов'),
+    (1, 'Получен 1 ответ'),
+    (3, 'Получено 3 ответа'),
+    (11, 'Получено 11 ответов'),
+    (21, 'Получен 21 ответ'),
+])
+def test_russian_answer_count_summary(count, summary):
+    assert _answer_count_summary(count) == summary
+
+
+def test_report_and_candidate_view_use_approved_skill_name():
+    state = InterviewEngine(FakeLLMProvider([])).state
+    state.plan_snapshot.skills[0].name = 'Мытьё полов'
+    state.phase = Phase.COMPLETED
+    skill_id = state.skills[0].skill
+    report = generate_report(state, mode='scripted')
+    view = session_view(SimpleNamespace(id='test', model='fake', state=state.model_dump_json(), pending=None))
+    assert report['skills'][0]['name'] == 'Мытьё полов'
+    assert view['skill_names'][skill_id] == 'Мытьё полов'
 
 
 def test_report_requires_independent_goals_and_caps_level():
@@ -24,12 +51,18 @@ def test_report_requires_independent_goals_and_caps_level():
         await engine.submit(q.id, 'mechanism')
         report = generate_report(engine.state, mode='scripted')
         first = report['skills'][0]
+        assert first['name'] == engine.plan.skills[0].name
         assert first['demonstrated_level'] == 'middle'
         assert first['status'] == 'provisional'
         ids = {e['id'] for e in first['evidence']}
         assert all(s['evidence_id'] in ids for s in first['strengths'])
         assert all(s['demonstrated_level'] is None for s in report['skills'][1:])
         assert 'hire' not in report and 'score' not in report
+        assert report['overall_technical_summary'].startswith('Получено 2 ответа.')
+        for turn in engine.state.turns:
+            turn.question.generation = 'approved_template'
+        approved_report = generate_report(engine.state, mode='scripted')
+        assert approved_report['skills'][0]['demonstrated_level'] == 'middle'
     asyncio.run(scenario())
 
 

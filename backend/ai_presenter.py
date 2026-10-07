@@ -7,6 +7,7 @@ from ai_core.reports.generator import generate_report
 def session_view(row) -> dict:
     state = InterviewState.model_validate_json(row.state)
     completed = state.phase == Phase.COMPLETED
+    skill_names = {skill.id: skill.name for skill in state.plan_snapshot.skills} if state.plan_snapshot else {}
     last = state.turns[-1] if state.turns else None
     def public_question(q):
         return q.model_dump(mode='json', include={'id', 'skill', 'type', 'text', 'generation'})
@@ -16,6 +17,7 @@ def session_view(row) -> dict:
             'interview_id': row.id, 'status': 'completed' if completed else 'created' if state.phase == Phase.CREATED else 'in_progress',
             'action': (state.next_action or {}).get('action', 'ASK_QUESTION'),
             'progress': {'questions_answered':len(state.turns), 'skills_completed':sum(s.completed for s in state.skills), 'skills_total':len(state.skills)},
+            'skill_names': skill_names,
             'resume_required': not archived and state.phase not in (Phase.CREATED, Phase.WAITING_FOR_ANSWER, Phase.COMPLETED),
             'questions': [public_question(q) for q in state.questions],
             'answers': [t.answer.model_dump(mode='json') for t in state.turns],

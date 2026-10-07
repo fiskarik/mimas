@@ -60,7 +60,10 @@ export function CandidateHub(){
       if(!finished){
         if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для голосового интервью нужен браузер с доступом к камере и микрофону.');
         try{
-          camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
+          camera=await navigator.mediaDevices.getUserMedia({
+            video:{facingMode:'user'},
+            audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
+          });
         }catch(error){throw mediaError(error);}
         if(!camera.getVideoTracks().some(track=>track.readyState==='live'))throw new Error('Камера не подключена. Проверьте устройство и повторите попытку.');
         if(!camera.getAudioTracks().some(track=>track.readyState==='live'))throw new Error('Микрофон не подключён. Проверьте устройство и повторите попытку.');

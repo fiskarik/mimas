@@ -35,7 +35,8 @@ class InterviewEngine:
                  candidate_context: dict | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  trace_sink: Callable[[dict], None] | None = None,
-                 checkpoint: Callable | None = None):
+                 checkpoint: Callable | None = None,
+                 approved_primary_questions: bool = False):
         self.plan = plan or load_plan()
         config = config or InterviewInput()
         if config.role != self.plan.role:
@@ -47,7 +48,7 @@ class InterviewEngine:
                        difficulty=list(Level).index(config.target_level) + 1)
             for s in self.plan.skills])
         self.evaluator = AnswerEvaluator(provider)
-        self.generator = QuestionGenerator(provider)
+        self.generator = QuestionGenerator(provider, approved_primary_questions=approved_primary_questions)
         self.clock = clock
         self.started: float | None = None
         self.trace: list[dict] = []

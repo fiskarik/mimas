@@ -88,7 +88,8 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             raise HTTPException(503, str(exc)) from None
         provider.model = row.model
         engine = InterviewEngine(provider, config=state.config, limits=state.limits,
-                                 plan=state.plan_snapshot, clock=time.time)
+                                 plan=state.plan_snapshot, clock=time.time,
+                                 approved_primary_questions=bool(row.opportunity_id))
         engine.state = state
         engine.state.interview_id = row.id
         engine.limits = engine.state.limits
@@ -155,7 +156,8 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                        'years_experience': profile.years_experience,
                        'vacancy_title': opportunity.title, 'vacancy_stack': json.loads(opportunity.stack)}
             engine = InterviewEngine(provider, config=config, plan=plan,
-                                     candidate_context=context, clock=time.time)
+                                     candidate_context=context, clock=time.time,
+                                     approved_primary_questions=True)
             engine.state.llm_provider = 'yandex'
             now = time.time()
             row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(x_candidate_token.encode()).hexdigest(),
