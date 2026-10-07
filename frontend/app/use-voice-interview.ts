@@ -122,7 +122,8 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
               current.send(JSON.stringify({type:'audio',audio:toPcm(samples,context.sampleRate)}));
             };
             if(context.audioWorklet){
-              const code="class MimasCapture extends AudioWorkletProcessor{process(inputs){const channel=inputs[0]&&inputs[0][0];if(channel)this.port.postMessage(channel.slice());return true;}}registerProcessor('mimas-capture',MimasCapture);";
+              // A worklet receives 128 samples per callback. Batch roughly 90 ms of audio.
+              const code="class MimasCapture extends AudioWorkletProcessor{constructor(){super();this.buffer=new Float32Array(4096);this.offset=0;}process(inputs){const channel=inputs[0]&&inputs[0][0];if(channel){let cursor=0;while(cursor<channel.length){const length=Math.min(channel.length-cursor,this.buffer.length-this.offset);this.buffer.set(channel.subarray(cursor,cursor+length),this.offset);this.offset+=length;cursor+=length;if(this.offset===this.buffer.length){this.port.postMessage(this.buffer,[this.buffer.buffer]);this.buffer=new Float32Array(4096);this.offset=0;}}}return true;}}registerProcessor('mimas-capture',MimasCapture);";
               const moduleUrl=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
               try{await context.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
               if(epoch!==generation.current)return;

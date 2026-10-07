@@ -29,6 +29,10 @@ LOGGER = logging.getLogger(__name__)
 SAMPLE_RATE = 44100
 PCM_BYTES_PER_SECOND = SAMPLE_RATE * 2
 MAX_AUDIO_CHUNK_BYTES = PCM_BYTES_PER_SECOND * 2
+# Provider output deltas are not microphone frames: one delta can contain
+# several seconds of speech. Bound it separately, then forward small frames.
+MAX_TTS_DELTA_BYTES = 8 * 1024 * 1024
+TTS_DOWNSTREAM_CHUNK_BYTES = PCM_BYTES_PER_SECOND // 2
 AUDIO_WINDOW_BYTES = PCM_BYTES_PER_SECOND * 60
 # See https://aistudio.yandex.ru/ru/docs/ai-studio/pricing . Both audio
 # directions and text tokens are included in the conservative reservation.
@@ -177,16 +181,24 @@ def _question_prompt(question: str) -> dict:
     }
 
 
-def _audio_bytes(encoded: str) -> bytes:
-    if not isinstance(encoded, str) or len(encoded) > ((MAX_AUDIO_CHUNK_BYTES + 2) // 3) * 4:
+def _audio_bytes(encoded: str, *, max_bytes: int = MAX_AUDIO_CHUNK_BYTES) -> bytes:
+    if not isinstance(encoded, str) or len(encoded) > ((max_bytes + 2) // 3) * 4:
         raise VoiceProtocolError('Слишком большой фрагмент звука.')
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (ValueError, binascii.Error):
         raise VoiceProtocolError('Неверный формат звука.') from None
-    if not raw or len(raw) % 2 or len(raw) > MAX_AUDIO_CHUNK_BYTES:
+    if not raw or len(raw) % 2 or len(raw) > max_bytes:
         raise VoiceProtocolError('Неверный размер фрагмента звука.')
     return raw
+
+
+def _tts_audio_chunks(encoded: str):
+    """Validate a provider delta and yield browser-sized, PCM-aligned frames."""
+    raw = _audio_bytes(encoded, max_bytes=MAX_TTS_DELTA_BYTES)
+    for offset in range(0, len(raw), TTS_DOWNSTREAM_CHUNK_BYTES):
+        chunk = raw[offset:offset + TTS_DOWNSTREAM_CHUNK_BYTES]
+        yield chunk, base64.b64encode(chunk).decode('ascii')
 
 
 def _spoken_matches_question(spoken: str, question: str) -> bool:
@@ -278,7 +290,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                 connect(upstream_url, additional_headers=headers, ping_interval=20,
                         open_timeout=15, max_size=2 * 1024 * 1024) as stt,
                 connect(upstream_url, additional_headers=headers, ping_interval=20,
-                        open_timeout=15, max_size=2 * 1024 * 1024) as tts,
+                        open_timeout=15, max_size=12 * 1024 * 1024) as tts,
             ):
                 connected = True
                 stt_send_lock = asyncio.Lock()
@@ -412,9 +424,9 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         if kind == 'response.output_audio.delta' and speaking:
                             audio = event.get('delta')
                             if isinstance(audio, str):
-                                raw = _audio_bytes(audio)
-                                await spend.audio('output', len(raw))
-                                await send({'type': 'audio', 'audio': audio})
+                                for chunk, encoded in _tts_audio_chunks(audio):
+                                    await spend.audio('output', len(chunk))
+                                    await send({'type': 'audio', 'audio': encoded})
                         elif kind == 'response.output_audio_transcript.done':
                             spoken_question = event.get('transcript')
                         elif kind == 'response.done':

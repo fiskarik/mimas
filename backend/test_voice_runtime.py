@@ -59,7 +59,8 @@ class FakeUpstream:
         if self.kind == 'tts' and event['type'] == 'response.create':
             question = self.questions[self.response_number]
             self.response_number += 1
-            audio = base64.b64encode(b'\x00\x00' * 100).decode()
+            samples = voice.SAMPLE_RATE * 3 if self.response_number == 1 else 100
+            audio = base64.b64encode(b'\x00\x00' * samples).decode()
             await self.queue.put({'type': 'response.output_audio.delta', 'delta': audio})
             await self.queue.put({'type': 'response.output_audio_transcript.done',
                                   'transcript': question.text})
@@ -142,8 +143,17 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
             assert ws.receive_json()['type'] == 'state'
             assert ws.receive_json() == {
                 'type': 'transcript', 'speaker': 'mimas', 'text': first.text}
-            assert ws.receive_json()['type'] == 'audio'
-            assert ws.receive_json() == {'type': 'speech_stopped'}
+            received_audio = []
+            while True:
+                event = ws.receive_json()
+                if event['type'] == 'speech_stopped':
+                    break
+                assert event['type'] == 'audio'
+                received_audio.append(base64.b64decode(event['audio']))
+            assert len(received_audio) > 1
+            assert all(len(chunk) <= voice.TTS_DOWNSTREAM_CHUNK_BYTES
+                       and len(chunk) % 2 == 0 for chunk in received_audio)
+            assert sum(map(len, received_audio)) == voice.PCM_BYTES_PER_SECOND * 3
             ws.send_json({'type': 'audio', 'audio': base64.b64encode(b'\x00\x00' * 100).decode()})
             time.sleep(0.1)
             assert not any(event['type'] == 'input_audio_buffer.append' for event in upstreams[0].sent)
