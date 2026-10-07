@@ -8,7 +8,7 @@ python3 scripts/migrate.py
 python3 -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --workers 1 &
 api_pid=$!
 
-(cd frontend/.next/standalone && HOSTNAME=127.0.0.1 PORT=3001 exec node server.js) &
+(cd frontend/.next/standalone && HOSTNAME=127.0.0.1 PORT=3001 exec node server.next.js) &
 next_pid=$!
 node scripts/web-gateway.js &
 web_pid=$!

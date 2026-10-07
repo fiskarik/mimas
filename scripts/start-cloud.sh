@@ -4,7 +4,7 @@ cd /app
 python scripts/migrate.py
 python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --workers 1 &
 api_pid=$!
-HOSTNAME=127.0.0.1 PORT=3001 node /app/frontend/server.js &
+HOSTNAME=127.0.0.1 PORT=3001 node /app/frontend/server.next.js &
 next_pid=$!
 node /app/scripts/web-gateway.js &
 web_pid=$!
