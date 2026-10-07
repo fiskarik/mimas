@@ -6,12 +6,12 @@ import AIDemo from './ai-demo';
 import type {Access} from './ai-session';
 import {assessmentFor,levelLabels,market,MarketError,salaryRange,type Level,type MyProfile,type Opportunity} from './marketplace-api';
 
-function cameraError(error:unknown):Error{
+function mediaError(error:unknown):Error{
   const name=error instanceof DOMException?error.name:'';
-  if(name==='NotAllowedError'||name==='PermissionDeniedError')return new Error('Разрешите доступ к камере в настройках браузера и Windows, затем повторите попытку.');
-  if(name==='NotFoundError'||name==='DevicesNotFoundError')return new Error('Камера не найдена. Подключите её и повторите попытку.');
-  if(name==='NotReadableError'||name==='TrackStartError')return new Error('Камеру не удалось запустить. Закройте приложения, использующие её, и попробуйте обычный Chrome или Edge.');
-  return new Error('Не удалось включить камеру. Проверьте её подключение и разрешения браузера.');
+  if(name==='NotAllowedError'||name==='PermissionDeniedError')return new Error('Разрешите доступ к камере и микрофону в браузере и Windows, затем повторите попытку.');
+  if(name==='NotFoundError'||name==='DevicesNotFoundError')return new Error('Камера или микрофон не найдены. Подключите оба устройства и повторите попытку.');
+  if(name==='NotReadableError'||name==='TrackStartError')return new Error('Камеру или микрофон не удалось запустить. Закройте другие приложения, использующие их, и попробуйте снова.');
+  return new Error('Не удалось включить камеру и микрофон. Проверьте подключение и разрешения браузера.');
 }
 
 export function CandidateHub(){
@@ -58,15 +58,12 @@ export function CandidateHub(){
     let camera:MediaStream|null=null;
     try{
       if(!finished){
-        if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для интервью нужен браузер с доступом к камере и микрофону.');
+        if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для голосового интервью нужен браузер с доступом к камере и микрофону.');
         try{
           camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
-        }catch{
-          // The camera is required; if audio cannot start, text answers still work with silent video.
-          try{camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false});}
-          catch(error){throw cameraError(error);}
-        }
-        if(!camera.getVideoTracks().length)throw new Error('Камера не подключена. Без неё начать интервью нельзя.');
+        }catch(error){throw mediaError(error);}
+        if(!camera.getVideoTracks().some(track=>track.readyState==='live'))throw new Error('Камера не подключена. Проверьте устройство и повторите попытку.');
+        if(!camera.getAudioTracks().some(track=>track.readyState==='live'))throw new Error('Микрофон не подключён. Проверьте устройство и повторите попытку.');
       }
       const response=await fetch('/api/ai/sessions',{method:'POST',headers:{'X-Candidate-Token':token,'Content-Type':'application/json'},body:JSON.stringify({opportunity_id:job.id,consent:true}),cache:'no-store'});
       const body=await response.json().catch(()=>({}));
@@ -84,19 +81,20 @@ export function CandidateHub(){
   }
   const historical=me?.assessments&&!Array.isArray(me.assessments)?Object.entries(me.assessments).filter(([id])=>!jobs.some(job=>job.id===id)):[];
   if(access)return <AIDemo linkedAccess={access} linkedOpportunity={activeJob?{title:activeJob.title,company_name:activeJob.company_name}:undefined} mediaStream={stream||undefined} onExit={leaveInterview}/>;
-  return <div className="market">
+  return <div className="market market--candidate">
     <header className="market-header"><a href="/" className="brand-word">mimas.</a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=employer" className="text-link">Для компаний <ArrowRight size={16}/></a></nav></header>
-    <main className="market-main"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1>Покажите навыки раньше резюме.</h1><p className="muted">Выберите вакансию и пройдите интервью по её требованиям. Для каждой вакансии будет своё техническое интервью и отдельный отчёт.</p>
+    <main className="market-main"><section className="market-intro" aria-labelledby="candidate-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1 id="candidate-intro-title">Покажите навыки <em>в разговоре.</em></h1><p>Выберите вакансию, расскажите о своём подходе и получите отчёт по техническому интервью.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit">m.</span><span className="market-intro-signal">СЛУШАЮ · ДУМАЮ · ОТВЕЧАЮ</span></div></section>
+    <nav className="market-quicklinks" aria-label="Этапы для кандидата"><a href="#candidate-profile">01 · Профиль</a><a href="#candidate-opportunities">02 · Вакансии</a><a href={consentJob ? "#candidate-interview" : "#candidate-opportunities"}>03 · Интервью</a></nav><div className="market-board">
       {error&&<div role="alert" className="error-box">{error}</div>}
-      {!loaded?<p>Загрузка…</p>:!token?<section className="card market-form"><h2>Профиль разработчика</h2><p className="note">Доступ к профилю хранится в этом браузере. Пока поддерживается специализация Python Backend.</p>
+      {!loaded?<p>Загрузка…</p>:!token?<section className="card market-form" id="candidate-profile"><h2>Профиль разработчика</h2><p className="note">Доступ к профилю хранится в этом браузере. Пока поддерживается специализация Python Backend.</p>
         <form onSubmit={register}><label>Имя или псевдоним<input required minLength={2} maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></label>
           <div className="market-fields"><label>Уровень<select value={level} onChange={e=>setLevel(e.target.value as Level)}><option value="junior">Junior</option><option value="middle">Middle</option><option value="senior">Senior</option></select></label><label>Опыт, лет<input type="number" min="0" max="60" step="0.5" value={years} onChange={e=>setYears(e.target.value)}/></label></div>
           <label>Стек через запятую<input required value={stack} onChange={e=>setStack(e.target.value)}/></label>
           <div className="market-fields"><label>GitHub или GitLab, необязательно<input type="url" placeholder="https://github.com/..." value={github} onChange={e=>setGithub(e.target.value)}/></label><label>Желаемая зарплата, ₽, необязательно<input type="number" min="0" value={salaryWish} onChange={e=>setSalaryWish(e.target.value)}/></label></div>
           <button className="primary" disabled={busy}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} Найти вакансии</button></form>
       </section>:!me?<p>Загружаем профиль…</p>:<>
-        <section className="card market-profile"><div><span className="eyebrow">ВАШ ПРОФИЛЬ</span><h2>{me.profile.name}</h2><p className="muted">Python Backend · {levelLabels[me.profile.level]} · опыт: {me.profile.years_experience} лет</p><div className="tags">{me.profile.stack.map(item=><span key={item}>{item}</span>)}</div></div><button className="secondary" onClick={logout}>Выйти из профиля</button></section>
-        <section className="market-section"><div className="market-heading"><div><span className="eyebrow">01 / ВАКАНСИИ</span><h2>Что вам подходит</h2></div><span className="badge">{jobs.filter(item=>item.match?.compatible).length} подходят из {jobs.length}</span></div>
+        <section className="card market-profile" id="candidate-profile"><div><span className="eyebrow">ВАШ ПРОФИЛЬ</span><h2>{me.profile.name}</h2><p className="muted">Python Backend · {levelLabels[me.profile.level]} · опыт: {me.profile.years_experience} лет</p><div className="tags">{me.profile.stack.map(item=><span key={item}>{item}</span>)}</div></div><button className="secondary" onClick={logout}>Выйти из профиля</button></section>
+        <section className="market-section" id="candidate-opportunities"><div className="market-heading"><div><span className="eyebrow">01 / ВАКАНСИИ</span><h2>Что вам подходит</h2></div><span className="badge">{jobs.filter(item=>item.match?.compatible).length} подходят из {jobs.length}</span></div>
           {jobs.length===0?<div className="card market-empty"><BriefcaseBusiness size={26}/><h3>Пока нет вакансий с утверждённым интервью</h3><p className="muted">Новые вакансии появятся здесь после проверки вопросов работодателем.</p></div>:<div className="market-list">{jobs.map(job=>{
             const assessment=assessmentFor(me,job.id);
             const done=Boolean(assessment?.report);
@@ -108,12 +106,12 @@ export function CandidateHub(){
           })}</div>}
         </section>
         {historical.length>0&&<section className="market-section"><div className="market-heading"><div><span className="eyebrow">02 / ИСТОРИЯ</span><h2>Мои прежние интервью</h2></div></div><div className="market-list">{historical.map(([id,assessment])=>{const past=me.assessment_opportunities?.[id]||{id,title:'Вакансия больше не опубликована',company_name:'Компания',status:'closed'};const done=Boolean(assessment.report||assessment.phase==='COMPLETED'||assessment.status==='completed');return <article className="card market-opportunity" key={id}><span className="eyebrow">{past.company_name}</span><h3>{past.title}</h3><span className="badge">{past.status==='closed'?'Вакансия закрыта':'Вакансия недоступна'}</span><p className="muted">Ваше интервью и отчёт сохраняются даже после закрытия вакансии.</p>{done?<button className="secondary" disabled={busy} onClick={()=>void openInterview(past,true)}>Открыть отчёт <ArrowRight size={16}/></button>:<button className="secondary" disabled={busy} onClick={()=>{setConsentJob(past);setConsent(false);}}>Продолжить интервью <ArrowRight size={16}/></button>}</article>;})}</div></section>}
-        {consentJob&&<section className="card market-assessment" aria-labelledby="market-consent-title"><span className="eyebrow">02 / ПЕРЕД ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS запросит доступ к камере и микрофону, запишет видео и ответы, передаст их для AI-оценки. Камера обязательна; если микрофон недоступен, видео сохранится без звука, а ответы можно ввести текстом. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек. Перед первым вопросом MIMAS отдельно запросит согласие на проверку известных помощников. На Windows для внутреннего теста понадобятся локальный помощник и расширение Chrome/Edge.</p>
+        {consentJob&&<section className="card market-assessment" id="candidate-interview" aria-labelledby="market-consent-title"><span className="eyebrow">02 / ПЕРЕД ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS запросит доступ к камере и микрофону, запишет видео и ответы, передаст их для AI-оценки. Для голосового интервью нужны работающие камера и микрофон. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек. Перед первым вопросом MIMAS отдельно запросит согласие на проверку известных помощников. На Windows для внутреннего теста понадобятся локальный помощник и расширение Chrome/Edge.</p>
           <label className="market-consent"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/> Я согласен(на) на запись интервью и передачу результата этой компании.</label>
           <div className="button-row"><button className="primary" disabled={busy||!consent} onClick={()=>void openInterview(consentJob)}>{busy?<Loader2 size={17} className="spin"/>:<Video size={17}/>} Разрешить камеру и продолжить</button><button className="secondary" disabled={busy} onClick={()=>setConsentJob(null)}>Отмена</button></div>
-          <p className="tiny muted">Если доступ к камере запрещён, интервью не начнётся. Распознанный текст ответа можно исправить перед отправкой.</p>
+          <p className="tiny muted">Если камера или микрофон недоступны, интервью не начнётся. Проверьте разрешения браузера и повторите попытку.</p>
         </section>}
       </>}
       <p className="market-footer"><ShieldCheck size={15}/> AI-оценка носит предварительный характер.</p>
-    </main></div>;
+    </div></main></div>;
 }

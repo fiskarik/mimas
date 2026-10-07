@@ -211,10 +211,9 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 save(row, engine)
             return public_view(load(iid, x_interview_token))
 
-    @app.post('/api/ai/sessions/{iid}/answers')
-    async def answer_ai_session(iid: str, body: CandidateAnswer, x_interview_token: str | None = Header(None)):
+    async def submit_answer(iid: str, body: CandidateAnswer, token: str | None):
         async with lock_for(iid):
-            row = load(iid, x_interview_token)
+            row = load(iid, token)
             state = InterviewState.model_validate_json(row.state)
             existing = next((t for t in state.turns if t.question.id == body.question_id), None)
             if existing:
@@ -224,14 +223,14 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                     engine = restore(row)
                     await engine.resume()
                     save(row, engine)
-                return public_view(load(iid, x_interview_token))
+                return public_view(load(iid, token))
             if state.pending_answer:
                 if state.pending_answer != body:
                     raise HTTPException(409, 'Повторите обработку сохранённого ответа.')
                 engine = restore(row)
                 await engine.resume()
                 save(row, engine)
-                return public_view(load(iid, x_interview_token))
+                return public_view(load(iid, token))
             if state.phase != Phase.WAITING_FOR_ANSWER or state.questions[-1].id != body.question_id:
                 raise HTTPException(409, 'Сначала ответьте на текущий вопрос.')
             if row.pending and CandidateAnswer.model_validate_json(row.pending) != body:
@@ -241,7 +240,12 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             save(row, engine, body.model_dump_json())
             await engine.handle(RuntimeEvent(type='ANSWER_SUBMITTED', question_id=body.question_id), body.text)
             save(row, engine)
-            return public_view(load(iid, x_interview_token))
+            return public_view(load(iid, token))
+
+
+    @app.post('/api/ai/sessions/{iid}/answers')
+    async def answer_ai_session(iid: str, body: CandidateAnswer, x_interview_token: str | None = Header(None)):
+        return await submit_answer(iid, body, x_interview_token)
 
     @app.post('/api/ai/sessions/{iid}/events')
     async def runtime_event(iid: str, body: RuntimeEvent, x_interview_token: str | None = Header(None)):
@@ -297,3 +301,6 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         except YandexServiceError as exc:
             raise HTTPException(503, str(exc)) from None
         return {'text': transcript}
+
+    from backend.voice_runtime import register_voice_route
+    register_voice_route(app, database, load, public_view, submit_answer)

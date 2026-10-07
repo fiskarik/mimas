@@ -27,7 +27,7 @@ child_env = os.environ.copy()
 child_env.pop('PYTHONPATH', None)
 try:
     processes.append(subprocess.Popen([str(python), '-m', 'uvicorn', 'backend.app:app', '--host', '127.0.0.1', '--port', '8000'], cwd=ROOT, env=child_env))
-    processes.append(subprocess.Popen([node, str(next_bin), 'dev', '--hostname', '127.0.0.1'], cwd=ROOT / 'frontend', env=child_env))
+    processes.append(subprocess.Popen([node, str(ROOT / 'scripts' / 'dev-web.js')], cwd=ROOT / 'frontend', env=child_env))
     print('\nOpen http://localhost:3000 — company key: configured COMPANY_KEY or demo-company\n', flush=True)
     while all(p.poll() is None for p in processes):
         time.sleep(1)

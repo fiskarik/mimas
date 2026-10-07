@@ -53,6 +53,7 @@ def configuration():
         ai_ready = False
     return {'mode': 'live', 'ai_ready': ai_ready,
             'stt_ready': bool(os.getenv('YANDEX_API_KEY') and os.getenv('YANDEX_FOLDER_ID')),
+            'voice_ready': bool(os.getenv('YANDEX_API_KEY') and os.getenv('YANDEX_FOLDER_ID')),
             'ocr_ready': bool(os.getenv('YANDEX_API_KEY') and os.getenv('YANDEX_FOLDER_ID')),
             'video_ready': all(os.getenv(x) for x in ('MIMAS_S3_BUCKET', 'MIMAS_S3_ACCESS_KEY', 'MIMAS_S3_SECRET_KEY')),
             'runner_ready': False}

@@ -1,0 +1,470 @@
+/* Reference-led MIMAS surfaces for the landing page and both dashboards. */
+.landing .landing-hero {
+  min-height: max(780px, 100svh);
+  padding: 126px clamp(18px, 4.2vw, 70px) 42px;
+  justify-content: flex-start;
+  gap: 28px;
+  background: #070b09;
+}
+.landing .hero-surface::after {
+  background: linear-gradient(130deg, #030604bd, #08130b80 46%, #030604c7);
+}
+.landing .hero-topline {
+  position: relative;
+  z-index: 1;
+  max-width: 1500px;
+  color: #f0f1e8;
+  margin: 0 auto;
+}
+.mimas-hero-panel {
+  width: min(100%, 1500px);
+  margin: auto;
+  padding: clamp(28px, 3.7vw, 64px);
+  border: 1px solid #e8ebdb91;
+  border-radius: clamp(30px, 5.5vw, 78px);
+  background: linear-gradient(125deg, #f3f2e3ec, #dbe2d4e8 60%, #eeeedeeb);
+  box-shadow: 0 32px 110px #0008, inset 0 1px #fff8;
+  backdrop-filter: blur(27px) saturate(1.12);
+  color: #15251a;
+  position: relative;
+  z-index: 1;
+}
+.mimas-hero-heading {
+  display: grid;
+  grid-template-columns: clamp(76px, 11vw, 156px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(18px, 3vw, 46px);
+}
+.mimas-hero-seal {
+  width: clamp(76px, 11vw, 156px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #0b100d;
+  color: #e6efde;
+  box-shadow: inset 0 0 0 1px #89968622;
+}
+.mimas-hero-seal .pixel-mark {
+  width: 28%;
+  height: 28%;
+  gap: 4px;
+}
+.landing .mimas-hero-heading .small-kicker {
+  color: #485848;
+  margin: 0 0 12px;
+  font-size: clamp(8px, .85vw, 11px);
+}
+.landing .mimas-hero-heading h1 {
+  max-width: 980px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(41px, 5.4vw, 94px);
+  font-weight: 400;
+  line-height: .99;
+  letter-spacing: -.057em;
+  margin: 0;
+}
+.mimas-hero-heading h1 em,
+.market-intro h1 em {
+  font-weight: 400;
+  color: #687e67;
+}
+.mimas-hero-actions {
+  margin: clamp(30px, 4vw, 60px) 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(12px, 2vw, 28px);
+}
+.mimas-hero-actions > :is(button, a) {
+  min-height: 82px;
+  padding: 18px clamp(17px, 2vw, 28px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #3c5140;
+  border-radius: 15px;
+  background: #344535;
+  color: #f6f8ec;
+  font-size: clamp(13px, 1.2vw, 18px);
+  font-weight: 500;
+  text-align: left;
+  transition: background .2s, transform .2s, box-shadow .2s;
+}
+.mimas-hero-actions > :is(button, a):hover {
+  background: #1f3627;
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px #21322733;
+}
+.mimas-hero-actions svg { flex: none; }
+.mimas-hero-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(14px, 2.7vw, 40px);
+}
+.mimas-hero-cards article {
+  min-height: clamp(250px, 21vw, 340px);
+  padding: clamp(25px, 3vw, 42px);
+  border: 1px solid #34483a88;
+  border-radius: clamp(25px, 3.4vw, 48px);
+  background: #728274d9;
+  color: #fcfdf5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.mimas-hero-cards article:nth-child(2) { background: #677865df; }
+.mimas-hero-cards article > span {
+  font: 10px/1.4 Consolas, monospace;
+  letter-spacing: .13em;
+  color: #e0eadc;
+}
+.landing .mimas-hero-cards h2 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(28px, 2.8vw, 44px);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -.045em;
+  margin: 20px 0 13px;
+}
+.mimas-hero-cards p {
+  max-width: 430px;
+  line-height: 1.5;
+  font-size: clamp(12px, 1vw, 15px);
+  color: #f2f7eb;
+}
+.mimas-hero-cards :is(button, a) {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid #f9fff1a6;
+  padding: 5px 0 8px;
+  margin-top: auto;
+  background: transparent;
+  color: white;
+  font-size: 13px;
+}
+.mimas-hero-cards :is(button, a):hover { color: #eaffba; }
+.mimas-hero-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 24px;
+  font: 10px/1.3 Consolas, monospace;
+  letter-spacing: .1em;
+  color: #526655;
+}
+.mimas-hero-panel-foot a {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #a3b4a0;
+  border-radius: 50%;
+}
+
+/* Candidate and employer workspaces share the second reference's stacked composition. */
+.market {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  background: #07100b;
+  color: #18291d;
+}
+.market::before {
+  content: '';
+  position: fixed;
+  z-index: -2;
+  inset: 0;
+  background: linear-gradient(115deg, #030805c9, #0a1c116e 55%, #020705c7),
+              url('/media/mimas-fluid-poster.webp') center / cover no-repeat;
+}
+.market .market-header {
+  background: #0c1a11d9;
+  color: #edf5e9;
+  border-bottom: 1px solid #dbe9d426;
+  padding: 20px max(25px, calc((100vw - 1320px) / 2));
+  backdrop-filter: blur(18px);
+}
+.market .market-header .brand-word {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 30px;
+  font-weight: 400;
+}
+.market .market-header .text-link { color: #e3efde; }
+.market .market-header .text-link:hover { color: #d9f4a9; }
+.market .market-main {
+  max-width: 1320px;
+  padding: clamp(24px, 4vw, 56px) clamp(16px, 3vw, 36px) 72px;
+}
+.market-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(270px, .95fr);
+  gap: clamp(25px, 4vw, 70px);
+  align-items: center;
+  min-height: 270px;
+  padding: clamp(28px, 4vw, 54px);
+  border: 1px solid #b3c2a943;
+  border-radius: clamp(27px, 3.6vw, 48px);
+  color: #f4f6eb;
+  background: linear-gradient(120deg, #26392be8, #1b3121dd 55%, #263b2cd9);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 18px 55px #0006;
+}
+.market-intro .eyebrow {
+  color: #bfd1b6;
+  margin-bottom: 24px;
+}
+.market-intro h1 {
+  max-width: 700px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(39px, 4.2vw, 66px);
+  line-height: 1.03;
+  font-weight: 400;
+  letter-spacing: -.052em;
+  margin: 0 0 22px;
+}
+.market-intro h1 em { color: #bad4ad; }
+.market-intro p {
+  max-width: 550px;
+  font-size: clamp(13px, 1.1vw, 16px);
+  line-height: 1.65;
+  color: #dce8d8;
+  margin: 0;
+}
+.market-intro-art {
+  min-height: 210px;
+  aspect-ratio: 2.25;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dcebd34d;
+  border-radius: 25px;
+  background: #060b08;
+  box-shadow: inset 0 0 44px #0009, 0 16px 40px #0005;
+}
+.market-intro-art::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 48% 50%, #b8d3b655, transparent 32%),
+              url('/media/mimas-fluid-poster.webp') center / cover no-repeat;
+  opacity: .56;
+}
+.market-intro-art::after {
+  content: '';
+  position: absolute;
+  inset: 14%;
+  border: 1px solid #dce8d93d;
+  border-radius: 50%;
+  box-shadow: 0 0 0 26px #deeada07, 0 0 0 53px #d8e6d507;
+}
+.market-intro-orbit {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font: italic 64px/1 Georgia, serif;
+  color: #f5f8e8;
+  text-shadow: 0 6px 38px #d4f2b399;
+}
+.market-intro-signal {
+  position: absolute;
+  z-index: 1;
+  bottom: 16px;
+  left: 17px;
+  font: 9px/1.3 Consolas, monospace;
+  letter-spacing: .13em;
+  color: #ecf8e0;
+}
+.market-quicklinks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(10px, 2vw, 30px);
+  padding: clamp(16px, 2.2vw, 24px) clamp(16px, 4vw, 54px);
+  margin-top: 8px;
+  border: 1px solid #dce9d1a6;
+  border-radius: 37px;
+  background: #e8ecdded;
+  backdrop-filter: blur(22px);
+  box-shadow: 0 18px 55px #0003;
+}
+.market-quicklinks a {
+  min-height: 64px;
+  padding: 14px 18px;
+  border: 1px solid #354b3973;
+  border-radius: 100px;
+  background: #728372;
+  color: #f9fdf2;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font: 14px/1.2 Georgia, serif;
+  transition: background .2s, transform .2s;
+}
+.market-quicklinks a:hover { background: #334b36; transform: translateY(-2px); }
+.market-board {
+  margin-top: 8px;
+  padding: clamp(24px, 4vw, 60px);
+  min-height: 350px;
+  border: 1px solid #e6eadaac;
+  border-radius: clamp(28px, 4vw, 50px);
+  background: linear-gradient(125deg, #eff0e5ed, #dfe6daee 65%, #e9ecdeeb);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 30px 85px #0006;
+}
+.market-board .market-section:first-child { margin-top: 0; }
+.market-board .eyebrow { color: #536d56; }
+.market-board .market-heading h2,
+.market-board .market-form h2,
+.market-board .market-profile h2,
+.market-board .market-assessment h2 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(28px, 2.5vw, 39px);
+  font-weight: 400;
+  letter-spacing: -.04em;
+  line-height: 1.1;
+}
+.market-board .card {
+  border: 1px solid #879f8b6b;
+  border-radius: 28px;
+  background: #e6ece2ce;
+  box-shadow: 0 8px 24px #17291a0b;
+}
+.market-board .market-opportunity,
+.market-board .market-person { min-height: 280px; padding: clamp(21px, 2.4vw, 33px); }
+.market-board .market-opportunity h3,
+.market-board .market-person h3 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(22px, 2vw, 30px);
+  font-weight: 400;
+  line-height: 1.13;
+  letter-spacing: -.035em;
+}
+.market-board .muted { color: #4f6254; }
+.market-board .note {
+  border-color: #a1b69a;
+  border-radius: 13px;
+  background: #d9e4d5ba;
+  color: #3b5640;
+}
+.market-board .tags > span {
+  border: 1px solid #96aa97;
+  border-radius: 100px;
+  background: #f1f5ea;
+  color: #405741;
+}
+.market-board .badge {
+  border-radius: 100px;
+  background: #e0e8dc;
+  color: #344c38;
+}
+.market-board .badge.green { background: #cadfc8; color: #244c2f; }
+.market-board .primary,
+.market-board .secondary {
+  min-height: 44px;
+  border-radius: 100px;
+  padding: 10px 19px;
+}
+.market-board .primary {
+  border-color: #263d2b;
+  background: #263d2b;
+  color: #f7faef;
+}
+.market-board .primary:hover:not(:disabled) { background: #456249; }
+.market-board .secondary {
+  border-color: #9bad9b;
+  background: #eef3ea;
+  color: #29412e;
+}
+.market-board .secondary:hover:not(:disabled) { background: #d9e7d8; }
+.market-board .text-link { color: #265336; }
+.market-board .market-source-tabs .selected,
+.market-board .market-workbench-tabs .selected {
+  border-color: #526f57;
+  background: #c9ddc7;
+  color: #23482d;
+}
+.market-board :is(input, textarea, select) {
+  border: 1px solid #aabca9;
+  border-radius: 12px;
+  background: #f8faf3;
+  color: #1e3223;
+}
+.market-board :is(input, textarea, select):focus-visible,
+.market :is(button, a):focus-visible {
+  outline: 3px solid #96d478;
+  outline-offset: 3px;
+}
+.market-board .market-import { background: #ecf2e8; border-color: #a0b59d; }
+.market-board .market-skill-editor,
+.market-board .market-pair,
+.market-board .market-skill blockquote {
+  background: #f0f4eb;
+  border-color: #adbfaa;
+}
+.market-board .market-selected { border-color: #3e6a44; box-shadow: 0 0 0 2px #78a176; }
+.market-board .market-footer { margin-bottom: 0; color: #506851; }
+.market-board .market-admin summary { cursor: pointer; }
+.market [id^='candidate-'],
+.market [id^='employer-'] { scroll-margin-top: 25px; }
+
+@media (max-width: 900px) {
+  .mimas-hero-panel { padding: 30px; border-radius: 42px; }
+  .mimas-hero-actions > :is(button, a) { min-height: 67px; }
+  .mimas-hero-cards article { min-height: 290px; }
+  .market-intro { grid-template-columns: 1fr; }
+  .market-intro-art { max-width: 600px; width: 100%; min-height: 190px; }
+}
+@media (max-width: 680px) {
+  .landing .landing-hero { padding: 155px 16px 28px; min-height: 100svh; gap: 20px; }
+  .landing .hero-topline { width: 100%; }
+  .mimas-hero-panel { padding: 23px; border-radius: 31px; }
+  .mimas-hero-heading { grid-template-columns: 55px 1fr; gap: 15px; align-items: start; }
+  .mimas-hero-seal { width: 55px; }
+  .mimas-hero-seal .pixel-mark { gap: 2px; }
+  .landing .mimas-hero-heading .small-kicker { margin: 2px 0 8px; font-size: 7px; letter-spacing: .07em; }
+  .landing .mimas-hero-heading h1 { font-size: clamp(30px, 7.2vw, 47px); line-height: 1.02; }
+  .mimas-hero-actions { grid-template-columns: 1fr; gap: 9px; margin: 26px 0; }
+  .mimas-hero-actions > :is(button, a) { min-height: 49px; padding: 12px 18px; border-radius: 12px; }
+  .mimas-hero-cards { grid-template-columns: 1fr; gap: 12px; }
+  .mimas-hero-cards article { min-height: 210px; padding: 23px; border-radius: 27px; }
+  .landing .mimas-hero-cards h2 { margin: 12px 0; font-size: 31px; }
+  .mimas-hero-cards p { font-size: 12px; }
+  .mimas-hero-panel-foot { font-size: 8px; margin-top: 18px; }
+  .mimas-hero-panel-foot span:nth-child(2) { display: none; }
+  .market .market-header { padding: 16px 18px; flex-wrap: wrap; }
+  .market .market-header nav { gap: 13px; }
+  .market .market-main { padding: 18px 12px 46px; }
+  .market-intro { padding: 28px 24px; border-radius: 29px; gap: 22px; }
+  .market-intro h1 { font-size: clamp(37px, 9vw, 52px); }
+  .market-intro-art { min-height: 160px; aspect-ratio: 2.2; border-radius: 18px; }
+  .market-quicklinks { gap: 7px; padding: 12px; border-radius: 25px; }
+  .market-quicklinks a { min-height: 54px; padding: 9px 4px; font-size: 11px; }
+  .market-board { padding: 22px 17px; border-radius: 27px; }
+  .market-board .card { border-radius: 21px; }
+  .market-board .market-opportunity,
+  .market-board .market-person { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mimas-hero-actions > :is(button, a),
+  .market-quicklinks a { transition: none; }
+}
+.landing .preview-sample {
+  margin: 22px 0 24px;
+  padding: 22px 24px;
+  border: 1px solid #acc2a9;
+  border-radius: 18px;
+  background: #e7eee4;
+  color: #233a29;
+}
+.landing .preview-sample span {
+  display: block;
+  margin-bottom: 12px;
+  color: #4a6c4b;
+  font: 10px/1.3 Consolas, monospace;
+  letter-spacing: .12em;
+}
+.landing .preview-sample p { margin: 0; font-size: 14px; line-height: 1.7; }

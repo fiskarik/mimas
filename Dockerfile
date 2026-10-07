@@ -21,6 +21,7 @@ COPY --from=frontend-build /app/frontend/.next/standalone ./frontend/
 COPY --from=frontend-build /app/frontend/.next/static ./frontend/.next/static/
 COPY --from=frontend-build /app/frontend/public ./frontend/public/
 COPY scripts/start-cloud.sh ./scripts/start-cloud.sh
+COPY scripts/web-gateway.js ./scripts/web-gateway.js
 COPY scripts/migrate.py ./scripts/migrate.py
 RUN useradd --create-home --uid 10001 mimas \
     && mkdir -p /app/data \

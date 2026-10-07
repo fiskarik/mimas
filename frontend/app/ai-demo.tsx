@@ -1,18 +1,19 @@
 'use client';
 
 import {useEffect,useRef,useState} from 'react';
-import {ArrowLeft,ArrowRight,Loader2,Mic,RefreshCw,Square,Video,Volume2} from 'lucide-react';
-import {GlassOrb} from './design';
+import {ArrowLeft,ArrowRight,AudioLines,Loader2,Mic,MicOff,RefreshCw,Square,Video,Volume2} from 'lucide-react';
 import {AnswerReport} from './answer-report';
 import {request,type Access,type Session} from './ai-session';
 import {useIntegrityEvents} from './use-integrity-events';
 import {IntegritySummary} from './integrity-summary';
 import {useInterviewMedia} from './use-interview-media';
 import {CandidateMonitorPanel,useCandidateMonitor} from './monitor-ui';
+import {useVoiceInterview,type VoicePhase} from './use-voice-interview';
 
 const names:Record<string,string>={'python.core':'Python Core','python.oop':'ООП','python.asyncio':'AsyncIO','web.http':'HTTP / REST','db.postgresql':'PostgreSQL','cs.algorithms':'Алгоритмы','engineering.debugging':'Отладка'};
 const levels:Record<string,string>={basic:'Базовый',junior:'Junior',middle:'Middle',strong_middle:'Strong Middle',senior:'Senior'};
 const failureNames:Record<string,string>={provider_error:'сбой AI API',invalid_output:'неверный формат ответа модели',unsupported_evidence:'оценка не прошла проверку цитат или цели вопроса',rate_limit:'достигнут лимит AI API',authentication_error:'неверный API-ключ',access_denied:'AI-провайдер запретил доступ',model_unavailable:'модель недоступна',output_truncated:'ответ модели обрезан',network_error:'сбой соединения с AI-провайдером',invalid_provider_response:'неверный ответ API'};
+const voiceLabels:Record<VoicePhase,string>={idle:'Ожидание',connecting:'Подключаем голос',listening:'Слушает вас',candidate_speaking:'Вы отвечаете',speaking:'MIMAS говорит',thinking:'Обдумывает ответ',disconnected:'Связь прервана',completed:'Интервью завершено'};
 type OpportunityLabel={title:string;company_name:string};
 
 export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStream}:{
@@ -20,140 +21,107 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
 }={}){
   const [access,setAccess]=useState<Access|null>(linkedAccess||null);
   const [data,setData]=useState<Session|null>(null);
-  const [key,setKey]=useState('demo-company');
-  const [answer,setAnswer]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [ready,setReady]=useState(false);
-  const [speaking,setSpeaking]=useState(false);
-  const [dictating,setDictating]=useState(false);
-  const [transcribing,setTranscribing]=useState(false);
-  const [transcriptNotice,setTranscriptNotice]=useState('');
   const [videoUrl,setVideoUrl]=useState('');
   const [recordingStatus,setRecordingStatus]=useState<{status:string;incomplete:boolean;expires_at:number|null}|null>(null);
-  const answerRef=useRef<HTMLTextAreaElement>(null);
-  const voiceRecorder=useRef<MediaRecorder|null>(null);
-  const voiceChunks=useRef<Blob[]>([]);
-  const voiceTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
-  const {flushEvents,track}=useIntegrityEvents(access,data,busy,setError);
+  const finalized=useRef(false);
+  const ending=useRef(false);
+  const {flushEvents}=useIntegrityEvents(access,data,busy,setError);
   const media=useInterviewMedia(linkedAccess||undefined,mediaStream);
   const monitor=useCandidateMonitor(linkedAccess||null,data?.phase);
-  const requiresVideo=Boolean(linkedAccess&&mediaStream&&!data?.report);
+  const voice=useVoiceInterview(setData);
   const hasMicrophone=Boolean(mediaStream?.getAudioTracks().some(track=>track.readyState==='live'));
-  useEffect(()=>{
-    if(linkedAccess){setAccess(linkedAccess);setReady(true);return;}
-    setKey(sessionStorage.getItem('company-key')||'demo-company');
-    try{const saved=sessionStorage.getItem('ai-access');if(saved){const value=JSON.parse(saved);if(typeof value.id==='string'&&typeof value.token==='string')setAccess(value);}}
-    catch{sessionStorage.removeItem('ai-access');}
-    setReady(true);
-  },[linkedAccess]);
+  const requiresVideo=Boolean(linkedAccess&&mediaStream&&!data?.report);
+  const current=data?.current_question;
+
+  useEffect(()=>{setAccess(linkedAccess||null);setReady(true);},[linkedAccess]);
   useEffect(()=>{
     if(!access)return;let cancelled=false;
-    request<Session>('/'+access.id,access.token).then(value=>{if(!cancelled){setData(value);if(value.pending_answer)setAnswer(value.pending_answer.text);}})
-      .catch(e=>{if(!cancelled)setError(e.message);});
+    request<Session>('/'+access.id,access.token).then(value=>{if(!cancelled)setData(value);})
+      .catch(cause=>{if(!cancelled)setError((cause as Error).message);});
     return ()=>{cancelled=true;};
   },[access]);
-  useEffect(()=>{if(data?.report&&access&&linkedAccess)void refreshRecordingStatus();},[Boolean(data?.report),access?.id,access?.token,Boolean(linkedAccess)]);
-  const current=data?.current_question;
   useEffect(()=>{
-    setSpeaking(false);setTranscriptNotice('');
-    return ()=>{if(typeof window!=='undefined'&&'speechSynthesis' in window)window.speechSynthesis.cancel();};
-  },[current?.id]);
+    if(media.videoRef.current)media.videoRef.current.srcObject=mediaStream||null;
+  },[mediaStream,data?.phase,media.status]);
+  useEffect(()=>{
+    const track=mediaStream?.getAudioTracks()[0];
+    if(!track)return;
+    const ended=()=>{if(ending.current||data?.phase==='COMPLETED')return;voice.disconnect();setError('Микрофон отключился. Проверьте устройство и подключитесь повторно.');};
+    track.addEventListener('ended',ended);
+    return ()=>track.removeEventListener('ended',ended);
+  },[mediaStream,voice.disconnect,data?.phase]);
+  useEffect(()=>{
+    if(data?.report&&access&&linkedAccess)void refreshRecordingStatus();
+  },[Boolean(data?.report),access?.id,access?.token,Boolean(linkedAccess)]);
+  useEffect(()=>{
+    if(!linkedAccess||!mediaStream||data?.phase!=='COMPLETED'||media.status!=='recording'||finalized.current)return;
+    finalized.current=true;
+    setBusy(true);
+    void media.finish().then(async uploaded=>{
+      if(!uploaded)throw new Error('Видео осталось в браузере. Повторите загрузку сохранённых частей.');
+      await refreshRecordingStatus();
+      if(access)setData(await request<Session>('/'+access.id,access.token));
+      ending.current=true;mediaStream.getTracks().forEach(track=>track.stop());
+    }).catch(cause=>setError((cause as Error).message)).finally(()=>setBusy(false));
+  },[data?.phase,media.status,access?.id]);
 
-  async function create(){
+  async function startVoice(){
+    if(!access||!data)return;
+    const stream=mediaStream;
+    if(!stream?.getAudioTracks().some(track=>track.readyState==='live')){
+      setError('Для начала нужен работающий микрофон. Разрешите доступ в браузере и откройте интервью снова.');return;
+    }
+    if(requiresVideo&&!media.ready){setError('Дождитесь запуска записи камеры.');return;}
+    if(linkedAccess&&data.phase==='CREATED'&&!monitor.startReady){
+      setError('Подтвердите согласие и подключите компоненты проверки перед интервью.');return;
+    }
     setBusy(true);setError('');
     try{
-      const next=await request<Access>('',undefined,{},key);
-      sessionStorage.setItem('ai-access',JSON.stringify(next));setAccess(next);
-      setData(await request<Session>('/'+next.id+'/start',next.token,{}));setAnswer('');
-    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+      voice.prepare();
+      await flushEvents();
+      if(data.phase==='CREATED'||data.resume_required){
+        const next=await request<Session>('/'+access.id+'/start',access.token,{});
+        setData(next);
+      }
+      await voice.connect(access,stream);
+    }catch(cause){setError((cause as Error).message);}finally{setBusy(false);}
   }
-  async function act(action:'answers'|'start'|'finish'){
+  async function finish(){
     if(!access)return;
-    if(action==='start'&&requiresVideo&&!media.ready){setError('Дождитесь запуска записи камеры.');return;}
-    if(action==='start'&&linkedAccess&&data?.phase==='CREATED'&&!monitor.startReady){setError('Подтвердите проверку и подключите необходимые компоненты перед первым вопросом.');return;}
-    setBusy(true);setError('');
+    ending.current=true;voice.disconnect();setBusy(true);setError('');
     try{
       await flushEvents();
-      if(action==='finish'&&mediaStream){
+      if(mediaStream){
         const uploaded=await media.finish();
-        if(!uploaded)throw new Error('Видео пока не загружено. Повторите загрузку сохранённых частей перед завершением.');
+        if(!uploaded)throw new Error('Видео ещё загружается. Повторите отправку сохранённых частей.');
         await refreshRecordingStatus();
       }
-      const body=action==='answers'?(data?.pending_answer||{question_id:data?.current_question?.id,text:answer}):{};
-      const next=await request<Session>('/'+access.id+'/'+action,access.token,body);
-      let visible=next;
-      if(next.phase==='COMPLETED'&&mediaStream){
-        const uploaded=await media.finish();
-        if(!uploaded){setData(next);throw new Error('Ответ сохранён, но видео ещё загружается. Повторите загрузку и обновите отчёт.');}
-        await refreshRecordingStatus();
-        visible=await request<Session>('/'+access.id,access.token);
-        mediaStream.getTracks().forEach(track=>track.stop());
-      }
-      setData(visible);
-      if(action==='answers')setAnswer('');
-    }catch(e){
-      const message=(e as Error).message;
-      setError(message);
-      if(!message.includes('видео')){
-        try{const latest=await request<Session>('/'+access.id,access.token);setData(latest);if(latest.pending_answer)setAnswer(latest.pending_answer.text);}catch{/* Keep the original error. */}
-      }
-    }finally{setBusy(false);answerRef.current?.focus();}
+      const next=await request<Session>('/'+access.id+'/finish',access.token,{});
+      setData(next);
+      if(mediaStream)mediaStream.getTracks().forEach(track=>track.stop());
+    }catch(cause){
+      ending.current=false;setError((cause as Error).message);
+      try{setData(await request<Session>('/'+access.id,access.token));}catch{/* original error remains */}
+    }finally{setBusy(false);}
   }
   async function refresh(){
     if(!access)return;setBusy(true);setError('');
-    try{const next=await request<Session>('/'+access.id,access.token);setData(next);if(next.pending_answer)setAnswer(next.pending_answer.text);}
-    catch(e){setError((e as Error).message);}finally{setBusy(false);}
+    try{setData(await request<Session>('/'+access.id,access.token));}
+    catch(cause){setError((cause as Error).message);}finally{setBusy(false);}
   }
   async function leave(){
     if(linkedAccess){
       if(mediaStream&&media.status==='recording'&&!data?.report){
-        if(!window.confirm('Выход прервёт видеозапись. Интервью можно продолжить позже, но запись будет неполной. Выйти?'))return;
-        if(!await media.finish(true)){setError('Видео не загружено. Повторите загрузку сохранённых частей перед выходом.');return;}
+        if(!window.confirm('Выход прервёт видеозапись. Выйти?'))return;
+        if(!await media.finish(true)){setError('Видео не загружено. Повторите загрузку сохранённых частей.');return;}
       }
-      onExit?.();return;
+      ending.current=true;voice.disconnect();onExit?.();return;
     }
-    sessionStorage.removeItem('ai-access');setAccess(null);setData(null);setAnswer('');setError('');
-  }
-  function speakQuestion(){
-    if(!current)return;
-    if(!('speechSynthesis' in window)){setError('Озвучивание не поддерживается этим браузером. Вопрос доступен текстом.');return;}
-    if(speaking){window.speechSynthesis.cancel();setSpeaking(false);return;}
-    window.speechSynthesis.cancel();
-    const utterance=new SpeechSynthesisUtterance(current.text);
-    utterance.lang='ru-RU';utterance.rate=0.95;
-    const voice=window.speechSynthesis.getVoices().find(item=>item.lang.toLowerCase().startsWith('ru'));
-    if(voice)utterance.voice=voice;
-    utterance.onend=()=>setSpeaking(false);utterance.onerror=()=>setSpeaking(false);
-    setSpeaking(true);window.speechSynthesis.speak(utterance);
-  }
-  async function toggleDictation(){
-    if(dictating){voiceRecorder.current?.stop();return;}
-    if(!mediaStream||!access){setError('Микрофон недоступен. Ответ можно ввести текстом.');return;}
-    const tracks=mediaStream.getAudioTracks();
-    if(!tracks.length){setError('Микрофон не найден.');return;}
-    const type=['audio/webm;codecs=opus','audio/webm'].find(value=>MediaRecorder.isTypeSupported(value));
-    if(!type){setError('Браузер не поддерживает запись звука WebM.');return;}
-    voiceChunks.current=[];
-    const recorder=new MediaRecorder(new MediaStream(tracks),{mimeType:type});
-    voiceRecorder.current=recorder;
-    recorder.ondataavailable=e=>{if(e.data.size)voiceChunks.current.push(e.data);};
-    recorder.onerror=()=>{setDictating(false);setError('Не удалось записать ответ. Текст можно ввести вручную.');};
-    recorder.onstop=async()=>{
-      if(voiceTimer.current){clearTimeout(voiceTimer.current);voiceTimer.current=null;}
-      setDictating(false);setTranscribing(true);setError('');
-      try{
-        const blob=new Blob(voiceChunks.current,{type});
-        if(!blob.size)throw new Error('Запись звука пуста.');
-        const form=new FormData();form.append('audio',blob,'answer.webm');
-        const response=await fetch('/api/ai/sessions/'+access.id+'/transcribe',{method:'POST',headers:{'X-Interview-Token':access.token},body:form,cache:'no-store'});
-        if(!response.ok){const value=await response.json().catch(()=>({}));throw new Error(typeof value.detail==='string'?value.detail:'Распознавание не удалось.');}
-        const result=await response.json() as {text:string};
-        if(result.text.trim()){setAnswer(value=>value.trim()?value.trim()+'\n'+result.text.trim():result.text.trim());setTranscriptNotice('Проверьте распознанный текст и исправьте ошибки перед отправкой.');answerRef.current?.focus();}
-      }catch(e){setError((e as Error).message);}finally{setTranscribing(false);}
-    };
-    recorder.start();setDictating(true);
-    voiceTimer.current=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},170000);
+    voice.disconnect();
+    window.location.href='/?view=candidate';
   }
   async function refreshRecordingStatus(){
     if(!access)return;
@@ -161,17 +129,12 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
     if(response.ok)setRecordingStatus(await response.json());
   }
   async function finalizeRecording(){
-    if(!access)return;
-    if(!mediaStream){setError('Для восстановления записи вернитесь в профиль и снова откройте интервью.');return;}
+    if(!access||!mediaStream){setError('Откройте интервью с камерой, чтобы восстановить запись.');return;}
     setBusy(true);setError('');
     try{
-      const uploaded=await media.finish();
-      if(!uploaded)throw new Error('Не все части видео загружены. Повторите попытку.');
-      await refreshRecordingStatus();
-      mediaStream.getTracks().forEach(track=>track.stop());
-      const latest=await request<Session>('/'+access.id,access.token);
-      setData(latest);
-    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+      if(!await media.finish())throw new Error('Не все части видео загружены. Повторите попытку.');
+      await refreshRecordingStatus();setData(await request<Session>('/'+access.id,access.token));
+    }catch(cause){setError((cause as Error).message);}finally{setBusy(false);}
   }
   async function openVideo(){
     if(!access)return;setError('');
@@ -179,43 +142,45 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
       const response=await fetch('/api/ai/sessions/'+access.id+'/recording/url',{headers:{'X-Interview-Token':access.token},cache:'no-store'});
       if(!response.ok){const value=await response.json().catch(()=>({}));throw new Error(typeof value.detail==='string'?value.detail:'Запись пока недоступна.');}
       const value=await response.json() as {url:string};setVideoUrl(value.url);
-    }catch(e){setError((e as Error).message);}
+    }catch(cause){setError((cause as Error).message);}
   }
   const notice=data?.evaluation_notice?.replace(/provider_error|invalid_output|unsupported_evidence|rate_limit|authentication_error|access_denied|model_unavailable|output_truncated|network_error|invalid_provider_response/g,value=>failureNames[value]);
-  return <div className="ai-demo"><header className="candidate-header"><a href="/" className="brand-word">mimas.</a>{linkedAccess?<button className="text-link" onClick={()=>void leave()}>К вакансиям <ArrowRight size={16}/></button>:<a href="/?view=employer" className="text-link">Кабинет <ArrowRight size={16}/></a>}</header>
-    <main className="ai-demo-main">{linkedAccess?<button className="text-link" onClick={()=>void leave()}><ArrowLeft size={15}/> К профилю</button>:<a href="/" className="text-link"><ArrowLeft size={15}/> На главную</a>}
-      <div className="ai-demo-heading"><div><span className="eyebrow">MIMAS · AI-ИНТЕРВЬЮ</span><h1>{linkedOpportunity?'Интервью по вакансии':'Обсудим, как это работает.'}</h1><p className="muted">{linkedOpportunity?linkedOpportunity.title+' · '+linkedOpportunity.company_name:'Технический диалог'}</p></div><GlassOrb compact state={busy?'thinking':'idle'}/></div>
-      {linkedAccess?<div className="note">Вопросы формируются для выбранной вакансии по утверждённому шаблону. Запись камеры и доступного микрофона загружается в защищённое хранилище. Распознанный ответ можно проверить и исправить до отправки.</div>:<div className="note">Вопросы можно озвучить голосом браузера. Ответы сохраняются на сервере и отправляются настроенному AI-провайдеру.</div>}
-      <p className="tiny muted">Фиксируются вставка, копирование и смена фокуса окна. Эти события сами по себе не снижают оценку.</p>
-      {linkedAccess&&data&&<CandidateMonitorPanel monitor={monitor} phase={data.phase}/>}
-      {mediaStream&&<section className="card ai-media-panel"><div className="ai-media-preview"><video ref={media.videoRef} autoPlay muted playsInline/><span className="ai-rec-badge"><span className={media.status==='recording'?'ai-rec-dot active':'ai-rec-dot'}/> {media.status==='recording'?'Идёт запись':media.status==='uploading'?'Загрузка видео…':media.status==='complete'?'Видео сохранено':media.status==='interrupted'?'Запись прервана':media.status==='error'?'Ошибка записи':'Подключаем запись…'}</span></div><div><p className="tiny muted">Камера обязательна для интервью. Не закрывайте вкладку, пока идёт загрузка видео.</p>{(media.status==='interrupted'||media.status==='error')&&<button className="secondary" onClick={()=>void media.retry()}>Повторить загрузку сохранённых частей</button>}</div></section>}
-      {mediaStream&&!hasMicrophone&&<div role="status" className="warning">Микрофон не запустился. Видео записывается без звука; вводите ответы текстом. Для голосовых ответов проверьте устройство ввода и попробуйте обычный Chrome или Edge.</div>}
-      {media.error&&<div role="status" className="warning">{media.error}</div>}
-      {error&&<div role="alert" className="error-box">{error}</div>}
-      {notice&&<div role="status" className="warning">{notice}</div>}
-      {!ready?<p>Загрузка…</p>:!access?<section className="card ai-start"><h2>Начать собеседование</h2><p className="muted">Если не знаете ответ, так и напишите — это не считается ошибочным утверждением.</p><form onSubmit={e=>{e.preventDefault();void create();}}><label>Ключ команды<input type="password" value={key} onChange={e=>setKey(e.target.value)} required/></label><button className="primary" disabled={busy}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} Начать AI-интервью</button></form></section>
-      :!data?<section className="card ai-start"><p>Загружаем сессию…</p><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Повторить загрузку</button></section>
-      :<><div className="ai-session-bar"><span>{data.model} · сохранено ответов: {data.answers.length}</span><button className="text-link" disabled={busy} onClick={()=>void refresh()}><RefreshCw size={14}/> Обновить</button></div>
-        {data.phase==='CREATED'&&<button className="primary" disabled={busy||Boolean(requiresVideo&&!media.ready)||Boolean(linkedAccess&&!monitor.startReady)} onClick={()=>void act('start')}>Получить первый вопрос</button>}
-        {data.resume_required&&<section className="card ai-start"><p>Сохранён незавершённый этап интервью. Продолжим с последней контрольной точки.</p><button className="primary" disabled={busy||Boolean(requiresVideo&&!media.ready)||Boolean(linkedAccess&&data.phase==='CREATED'&&!monitor.startReady)} onClick={()=>void act('start')}>Продолжить обработку</button></section>}
-        {data.phase==='COMPLETED'&&!data.report&&<section className="card ai-start"><h2>Интервью завершено, ожидаем запись</h2><p className="muted">Текстовые ответы сохранены. Отчёт откроется после успешной загрузки всех частей видеозаписи.</p><div className="button-row"><button className="primary" disabled={busy||!mediaStream} onClick={()=>void finalizeRecording()}>{busy?<Loader2 className="spin" size={16}/>:<Video size={16}/>} Завершить загрузку видео</button><button className="secondary" disabled={busy} onClick={()=>void refresh()}>Проверить отчёт</button></div>{!mediaStream&&<p className="tiny muted">Вернитесь к вакансии и откройте интервью с доступом к камере, чтобы восстановить запись.</p>}</section>}
-        {current&&<section className="card ai-question"><div className="section-top"><span className="badge purple">{names[current.skill]||current.skill}</span><span className="muted tiny">Вопрос {data.questions.length} · {current.type==='verification'?'Проверка утверждения':current.type==='follow_up'?'Уточнение':'Основной вопрос'}</span></div>
-          <h2>{current.text}</h2><button type="button" className="secondary" onClick={speakQuestion} aria-label={speaking?'Остановить озвучивание вопроса':'Озвучить вопрос'}>{speaking?<Square size={16}/>:<Volume2 size={16}/>} {speaking?'Остановить':'Озвучить вопрос'}</button><p className="tiny muted">Голос зависит от браузера и установленных языков.</p>{current.generation==='fallback'&&<p className="tiny muted">Использован резервный вопрос из банка.</p>}
-          <form onSubmit={e=>{e.preventDefault();void act('answers');}}><label>Ваш ответ или код<textarea ref={answerRef} value={answer} onChange={e=>setAnswer(e.target.value)} onPaste={e=>track('PASTE_DETECTED',e.clipboardData.getData('text').length)} onCopy={()=>track('COPY_DETECTED')} readOnly={!!data.pending_answer||busy} maxLength={16000} placeholder="Объясните своими словами. Код можно вставить с переносами строк."/></label>
-            {mediaStream&&hasMicrophone&&<div className="ai-dictation"><button type="button" className="secondary" disabled={busy||transcribing||!!data.pending_answer} onClick={()=>void toggleDictation()}>{dictating?<Square size={16}/>:<Mic size={16}/>} {dictating?'Остановить диктовку':transcribing?'Распознаём…':'Продиктовать ответ'}</button><span className="tiny muted">После распознавания текст появится в поле выше.</span></div>}
-            {transcriptNotice&&<p role="status" className="note">{transcriptNotice}</p>}
-            {data.pending_answer&&<p className="note">Ответ уже сохранён. Повторная отправка продолжит обработку без дубликата.</p>}
-            <div className="button-row"><button className="primary" disabled={busy||dictating||transcribing||!answer.trim()}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} {busy?'AI обрабатывает ответ…':data.pending_answer?'Повторить обработку':'Отправить проверенный ответ'}</button><button type="button" className="secondary" disabled={busy||dictating||transcribing||!!data.pending_answer} onClick={()=>void act('finish')}>Завершить и показать отчёт</button></div>
-          </form>
+  const active=Boolean(data&&data.phase!=='CREATED'&&data.phase!=='COMPLETED'&&!data.report);
+  const connected=['connecting','listening','candidate_speaking','speaking','thinking'].includes(voice.phase);
+  const videoPreview=mediaStream;
+
+  return <div className="ai-demo voice-page">
+    <div className="voice-backdrop" aria-hidden="true"><video autoPlay muted loop playsInline poster="/media/mimas-fluid-poster.webp"><source src="/media/mimas-fluid.mp4" type="video/mp4"/></video></div>
+    <header className="voice-nav"><a href="/" className="brand-word">mimas.</a><button className="voice-nav-exit" onClick={()=>void leave()}><ArrowLeft size={16}/> {linkedAccess?'К вакансиям':'На главную'}</button></header>
+    <main className="ai-demo-main">
+      {!ready?<p className="voice-load">Загружаем интервью…</p>
+      :!access?<section className="voice-preflight">
+        <div className="voice-preflight-head"><span className="voice-emblem"><AudioLines size={32}/></span><div><span className="voice-eyebrow">MIMAS · ТЕХНИЧЕСКОЕ ИНТЕРВЬЮ</span><h1>Разговор о ваших навыках</h1></div></div>
+        <div className="voice-preflight-steps"><span>01 · Профиль</span><span>02 · Вакансия</span><span>03 · Интервью</span></div>
+        <div className="voice-preflight-grid"><article><span className="voice-card-index">НАЧАЛО</span><h2>Выберите вакансию</h2><p>Зарегистрируйтесь как кандидат и выберите вакансию. После проверки устройств MIMAS проведёт голосовое интервью по утверждённому шаблону.</p><a className="voice-cta" href="/?view=candidate"><ArrowRight size={18}/> В кабинет кандидата</a></article><article><span className="voice-card-index">ЧТО ПОНАДОБИТСЯ</span><h2>Проверьте устройства</h2><p>Разрешите доступ к камере и микрофону, наденьте наушники. MIMAS озвучит вопрос, вы ответите голосом, а стенограмма сохранится в отчёте.</p><div className="voice-device-list"><span><Video size={18}/> Камера</span><span><Mic size={18}/> Микрофон</span><span><Volume2 size={18}/> Наушники</span></div></article></div>
+      </section>
+      :!data?<section className="voice-preflight voice-loading"><Loader2 className="spin" size={32}/><h1>Загружаем интервью</h1><button className="voice-cta" disabled={busy} onClick={()=>void refresh()}>Повторить загрузку</button></section>
+      :<div className="voice-session">
+        <header className="voice-session-header"><div><span className="voice-eyebrow">MIMAS · AI-ИНТЕРВЬЮ</span><h1>{linkedOpportunity?linkedOpportunity.title:'Технический диалог'}</h1><p>{linkedOpportunity?.company_name||'Голосовое интервью с MIMAS'}</p></div><span className="voice-session-counter">{data.answers.length} ответов сохранено</span></header>
+        {data.phase==='CREATED'&&<div className="voice-preflight voice-session-preflight">
+          <div className="voice-preflight-head"><span className="voice-emblem"><AudioLines size={31}/></span><div><span className="voice-eyebrow">ГОТОВЫ К ДИАЛОГУ?</span><h2>Проверим связь и начнём</h2></div></div>
+          <div className="voice-preflight-steps"><span>Камера {media.ready?'готова':'подключается'}</span><span>Микрофон {hasMicrophone?'готов':'не найден'}</span><span>Запись {media.status==='recording'?'идёт':'ожидает'}</span></div>
+          <div className="voice-preflight-grid"><article><span className="voice-card-index">УСТРОЙСТВА</span><h3>Ваше видео</h3><div className="voice-preview-box">{videoPreview?<video ref={media.videoRef} autoPlay muted playsInline/>:<Video size={28}/>}</div><p>Оставьте камеру и микрофон включёнными до завершения интервью. Наденьте наушники, чтобы MIMAS не услышал собственный голос из динамиков.</p></article><article><span className="voice-card-index">СОГЛАСИЕ И ПОДКЛЮЧЕНИЕ</span><h3>Перед первым вопросом</h3><p>Результат увидите вы и компания, открывшая вакансию. Голосовые ответы распознаются и сохраняются в отчёте.</p>{linkedAccess&&<CandidateMonitorPanel monitor={monitor} phase={data.phase}/>}<button className="voice-cta" disabled={busy||!hasMicrophone||Boolean(requiresVideo&&!media.ready)||Boolean(linkedAccess&&!monitor.startReady)} onClick={()=>void startVoice()}>{busy?<Loader2 className="spin" size={18}/>:<Mic size={18}/>} Начать разговор</button></article></div>
+        </div>}
+        {active&&<section className="voice-stage" aria-label="Голосовое интервью">
+          <div className="voice-stage-top"><div className="voice-stage-left"><span className="voice-live-label"><span className={connected?'voice-live-dot on':'voice-live-dot'}/> {voiceLabels[voice.phase]}</span><h2>{current?.text||'MIMAS готовит следующий вопрос'}</h2><p>{current?names[current.skill]||current.skill:'Дождитесь продолжения диалога'}</p><div className="voice-sound-bars" aria-hidden="true"><i/><i/><i/><i/><i/><i/><i/><i/></div></div><div className="voice-stage-camera">{videoPreview?<video ref={media.videoRef} autoPlay muted playsInline/>:<div className="voice-camera-empty"><Video size={30}/><span>Камера выключена</span></div>}<span className="voice-camera-label"><span className={media.status==='recording'?'ai-rec-dot active':'ai-rec-dot'}/> {mediaStream?(media.status==='recording'?'Запись идёт':'Камера'):'Предпросмотр'}</span></div></div>
+          <div className="voice-stage-controls"><button disabled={!connected} onClick={voice.toggleMute}>{voice.muted?<MicOff size={19}/>:<Mic size={19}/>} {voice.muted?'Включить микрофон':'Выключить микрофон'}</button><button disabled={voice.phase!=='speaking'} onClick={voice.interrupt}><Square size={17}/> Прервать реплику</button><button disabled={busy} onClick={()=>void (connected?finish():startVoice())}>{connected?<><ArrowRight size={19}/> Завершить</>:<><RefreshCw size={18}/> Подключиться</>}</button></div>
+          <div className="voice-conversation"><div className="voice-conversation-head"><div><span className="voice-eyebrow">ДИАЛОГ В РЕАЛЬНОМ ВРЕМЕНИ</span><h3>Ваш разговор с MIMAS</h3></div><span>{voiceLabels[voice.phase]}</span></div><div className="voice-lines" role="log" aria-live="polite" aria-relevant="additions">{voice.lines.length?voice.lines.map(line=><article key={line.id} className={'voice-line '+line.speaker}><span>{line.speaker==='mimas'?'MIMAS':'ВЫ'}</span><p>{line.text}</p></article>):<div className="voice-line-empty"><AudioLines size={29}/><p>{connected?'Слушайте первый вопрос и отвечайте обычным голосом.':'Нажмите «Подключиться», чтобы продолжить разговор.'}</p></div>}</div></div>
         </section>}
-        {data.report&&<section className="ai-report"><div className="section-top"><div><h2>Отчёт по интервью</h2><p className="muted">{data.report.overall_technical_summary}</p></div><button className="secondary" onClick={()=>void leave()}>{linkedAccess?'К вакансиям':'Новое интервью'}</button></div>
-          <p className="note">Уровни предварительные. Отсутствие ответа или сбой оценки не доказывают отсутствие навыка.</p><AnswerReport reviews={data.report.answer_reviews||[]} rubric={data.report.scoring_rubric} names={names}/>
-          <details className="skill-profile"><summary>Профиль по навыкам</summary><div className="report-skills">{data.report.skills.map(skill=><article className="card" key={skill.skill}><h3>{names[skill.skill]||skill.skill}</h3><span className="badge">{skill.demonstrated_level?levels[skill.demonstrated_level]:'Недостаточно данных'}</span><p>Ответов: {skill.answers_received} · обработано: {skill.evaluated_answers}</p>{skill.evidence.map(e=><div className="ai-evidence" key={e.id}><strong>{e.type==='positive'?'Подтверждение':e.type==='negative'?'Ошибка в утверждении':'Неопределённость'}</strong><p>{e.claim}</p><blockquote>{e.quote}</blockquote></div>)}</article>)}</div></details>
-          {linkedAccess&&<div className="ai-report-video">{recordingStatus?.incomplete&&<p role="status" className="warning">Видеозапись была прервана и содержит только сохранённую часть интервью.</p>}<button className="secondary" onClick={()=>void openVideo()}><Video size={16}/> {videoUrl?'Обновить ссылку на запись':'Посмотреть запись'}</button>{videoUrl&&<video controls preload="none" src={videoUrl}>Браузер не поддерживает воспроизведение видео.</video>}<p className="tiny muted">Запись удаляется через 30 дней. Текстовый отчёт остаётся доступен.</p></div>}
-        </section>}
+        {data.phase!=='CREATED'&&linkedAccess&&<div className="voice-monitor-live"><CandidateMonitorPanel monitor={monitor} phase={data.phase}/></div>}
+        {data.phase==='COMPLETED'&&!data.report&&<section className="voice-preflight voice-completing"><span className="voice-eyebrow">ЗАВЕРШЕНИЕ</span><h2>Интервью завершено</h2><p>Ответы сохранены. Загружаем видео и готовим отчёт.</p><div className="voice-stage-controls"><button disabled={busy||!mediaStream} onClick={()=>void finalizeRecording()}><Video size={17}/> Завершить загрузку видео</button><button disabled={busy} onClick={()=>void refresh()}><RefreshCw size={17}/> Проверить отчёт</button></div></section>}
+        {data.report&&<section className="ai-report voice-report"><div className="section-top"><div><span className="voice-eyebrow">РЕЗУЛЬТАТ ИНТЕРВЬЮ</span><h2>Отчёт по навыкам</h2><p>{data.report.overall_technical_summary}</p></div><button className="voice-cta" onClick={()=>void leave()}>{linkedAccess?'К вакансиям':'Новое интервью'}</button></div><p className="note">Оценки предварительные. Решение по кандидату принимает человек.</p><AnswerReport reviews={data.report.answer_reviews||[]} rubric={data.report.scoring_rubric} names={names}/><details className="skill-profile"><summary>Профиль по навыкам</summary><div className="report-skills">{data.report.skills.map(skill=><article className="card" key={skill.skill}><h3>{names[skill.skill]||skill.skill}</h3><span className="badge">{skill.demonstrated_level?levels[skill.demonstrated_level]:'Недостаточно данных'}</span><p>Ответов: {skill.answers_received} · обработано: {skill.evaluated_answers}</p>{skill.evidence.map(evidence=><div className="ai-evidence" key={evidence.id}><strong>{evidence.type==='positive'?'Подтверждение':evidence.type==='negative'?'Ошибка в утверждении':'Неопределённость'}</strong><p>{evidence.claim}</p><blockquote>{evidence.quote}</blockquote></div>)}</article>)}</div></details>{linkedAccess&&<div className="ai-report-video">{recordingStatus?.incomplete&&<p role="status" className="warning">Видеозапись прервана и содержит только сохранённую часть интервью.</p>}<button className="secondary" onClick={()=>void openVideo()}><Video size={16}/> {videoUrl?'Обновить ссылку на запись':'Посмотреть запись'}</button>{videoUrl&&<video controls preload="none" src={videoUrl}>Браузер не поддерживает воспроизведение видео.</video>}<p className="tiny muted">Запись удаляется через 30 дней. Текстовый отчёт остаётся доступен.</p></div>}</section>}
         {data.report?.integrity&&<IntegritySummary report={data.report.integrity} questions={data.questions}/>}
-        {!data.report&&data.answers.length>0&&<details className="card ai-history"><summary>История ответов ({data.answers.length})</summary>{data.answers.map(value=><article key={value.question_id}><h3>{data.questions.find(q=>q.id===value.question_id)?.text}</h3><pre>{value.text}</pre></article>)}</details>}
-      </>}
+      </div>}
+      {media.error&&<p role="status" className="voice-message">{media.error}{(media.status==='interrupted'||media.status==='error')&&<button onClick={()=>void media.retry()}>Повторить загрузку видео</button>}</p>}
+      {voice.error&&<p role="alert" className="voice-message">{voice.error}</p>}
+      {error&&<p role="alert" className="voice-message">{error}</p>}
+      {notice&&<p role="status" className="voice-message">{notice}</p>}
     </main>
   </div>;
 }
