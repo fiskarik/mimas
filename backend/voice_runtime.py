@@ -461,20 +461,28 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                     async for packet in stt:
                         event = json.loads(packet)
                         kind = event.get('type')
-                        item_id = None
-                        if kind in ('conversation.item.created', 'conversation.item.added',
-                                    'response.output_item.added'):
-                            item = event.get('item') or {}
-                            item_id = item.get('id') if isinstance(item, dict) else None
-                        elif kind == 'input_audio_buffer.speech_stopped':
+                        item = event.get('item') or {}
+                        item_id = item.get('id') if isinstance(item, dict) else None
+                        if kind == 'input_audio_buffer.speech_stopped':
                             item_id = event.get('item_id')
-                        if isinstance(item_id, str):
-                            if listening:
+                            if isinstance(item_id, str):
+                                if listening:
+                                    stt_context_items.add(item_id)
+                                else:
+                                    await retire_stt_item(item_id)
+                        elif kind in ('conversation.item.created', 'conversation.item.added',
+                                      'conversation.item.done', 'response.output_item.added'):
+                            if isinstance(item_id, str) and item_id not in deleted_stt_items:
                                 stt_context_items.add(item_id)
-                            else:
-                                # The next question is already being prepared: a
-                                # late item belongs to the prior answer, not this one.
-                                await retire_stt_item(item_id)
+                                # A cancelled assistant response can still be in
+                                # progress. Retire it only after it is complete.
+                                if not listening and (kind == 'conversation.item.done'
+                                                      or item.get('status') == 'completed'
+                                                      or item.get('role') == 'user'):
+                                    await retire_stt_item(item_id)
+                        elif kind == 'response.done' and not listening:
+                            for old_item_id in tuple(stt_context_items):
+                                await retire_stt_item(old_item_id)
                         await stt_events.put(event)
                     raise VoiceProtocolError('Соединение с распознаванием речи прервалось.')
 

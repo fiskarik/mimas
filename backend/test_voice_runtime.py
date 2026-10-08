@@ -93,6 +93,13 @@ class FakeUpstream:
                 await self.queue.put({'type': 'input_audio_buffer.speech_stopped', 'item_id': item_id})
                 await self.queue.put({'type': 'response.created',
                                       'response': {'id': 'unwanted-reply'}})
+                await self.queue.put({'type': 'conversation.item.added',
+                                      'item': {'id': f'auto-reply-{index + 1}',
+                                               'role': 'assistant', 'status': 'in_progress'}})
+                await self.queue.put({'type': 'conversation.item.done',
+                                      'item': {'id': f'auto-reply-{index + 1}',
+                                               'role': 'assistant', 'status': 'completed'}})
+                await self.queue.put({'type': 'response.done', 'response': {'status': 'cancelled'}})
                 if index == len(self.segments) - 1 and self.last_transcription_delay:
                     await asyncio.sleep(self.last_transcription_delay)
                 if index == len(self.segments) - 1 and self.drop_last_transcription:
@@ -204,6 +211,8 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
     assert len(submitted) == 1
     assert any(event['type'] == 'response.cancel' for event in upstreams[0].sent)
     assert any(event == {'type': 'conversation.item.delete', 'item_id': 'spoken-1'}
+               for event in upstreams[0].sent)
+    assert any(event == {'type': 'conversation.item.delete', 'item_id': 'auto-reply-1'}
                for event in upstreams[0].sent)
     assert budget.settled
     assert budget.settled[0][1] > 0
