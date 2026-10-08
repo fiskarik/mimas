@@ -13,6 +13,7 @@ from decimal import Decimal
 import json
 import logging
 import os
+import re
 import time
 from urllib.parse import quote
 
@@ -206,6 +207,39 @@ def _tts_audio_chunks(encoded: str):
         yield chunk, base64.b64encode(chunk).decode('ascii')
 
 
+def _merge_transcribed_segments(segments: list[tuple[int, str]]) -> str:
+    """Join VAD items without repeating words shared by adjacent transcripts."""
+    merged = ''
+    for _, raw in sorted(segments):
+        fragment = raw.strip()
+        if not fragment:
+            continue
+        if not merged:
+            merged = fragment
+            continue
+        earlier = [match.group().casefold() for match in re.finditer(r'\w+', merged)]
+        later_matches = list(re.finditer(r'\w+', fragment))
+        later = [match.group().casefold() for match in later_matches]
+        if not earlier or not later:
+            merged = f'{merged} {fragment}'
+            continue
+        overlap = 0
+        for count in range(min(len(earlier), len(later)), 0, -1):
+            if earlier[-count:] == later[:count]:
+                # Preserve short intentional fillers (e.g. 'yes, yes'), but
+                # collapse long repeated words at a VAD item boundary.
+                if (count >= 2 or (count == 1 and len(later[0]) >= 5)
+                        or count == len(earlier) == len(later)):
+                    overlap = count
+                break
+        if overlap == len(later):
+            continue
+        if overlap:
+            fragment = fragment[later_matches[overlap].start():]
+        merged = f'{merged.rstrip()} {fragment.lstrip()}'
+    return merged
+
+
 def _spoken_matches_question(spoken: str, question: str) -> bool:
     # Speech transcripts often spell technical terms phonetically. Reject only
     # a clearly different utterance; the persisted engine question stays truth.
@@ -305,6 +339,8 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                 listening = False
                 awaiting_playback = False
                 seen_items: set[str] = set()
+                stt_context_items: set[str] = set()
+                deleted_stt_items: set[str] = set()
                 utterance_questions: dict[str, str] = {}
                 spoken_question: str | None = None
                 stt_events: asyncio.Queue[dict] = asyncio.Queue()
@@ -349,6 +385,13 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                     async with stt_send_lock:
                         await stt.send(json.dumps(payload, ensure_ascii=False))
 
+                async def retire_stt_item(item_id: str):
+                    if item_id in deleted_stt_items:
+                        return
+                    deleted_stt_items.add(item_id)
+                    stt_context_items.discard(item_id)
+                    await stt_send({'type': 'conversation.item.delete', 'item_id': item_id})
+
                 async def tts_send(payload: dict):
                     async with tts_send_lock:
                         await tts.send(json.dumps(payload, ensure_ascii=False))
@@ -356,6 +399,10 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                 async def speak(question):
                     nonlocal current_question, speaking, listening, spoken_question, awaiting_playback
                     nonlocal speech_active, last_speech_stop
+                    # This socket only transcribes. Old audio and cancelled replies
+                    # must not become context for the candidate's next answer.
+                    for item_id in tuple(stt_context_items):
+                        await retire_stt_item(item_id)
                     cancel_answer_flush()
                     answer_segments.clear()
                     segment_numbers.clear()
@@ -412,7 +459,23 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
 
                 async def pump_stt():
                     async for packet in stt:
-                        await stt_events.put(json.loads(packet))
+                        event = json.loads(packet)
+                        kind = event.get('type')
+                        item_id = None
+                        if kind in ('conversation.item.created', 'conversation.item.added',
+                                    'response.output_item.added'):
+                            item = event.get('item') or {}
+                            item_id = item.get('id') if isinstance(item, dict) else None
+                        elif kind == 'input_audio_buffer.speech_stopped':
+                            item_id = event.get('item_id')
+                        if isinstance(item_id, str):
+                            if listening:
+                                stt_context_items.add(item_id)
+                            else:
+                                # The next question is already being prepared: a
+                                # late item belongs to the prior answer, not this one.
+                                await retire_stt_item(item_id)
+                        await stt_events.put(event)
                     raise VoiceProtocolError('Соединение с распознаванием речи прервалось.')
 
                 async def receive_stt():
@@ -447,7 +510,11 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             if not isinstance(item_id, str) or item_id in seen_items:
                                 continue
                             seen_items.add(item_id)
-                            question_id = utterance_questions.pop(item_id, current_question.id)
+                            # Late or unregistered audio must never be attributed
+                            # to a different interview question.
+                            question_id = utterance_questions.pop(item_id, None)
+                            if question_id is None:
+                                continue
                             pending_transcriptions.discard(item_id)
                             transcript = (event.get('transcript') or '').strip()
                             if not transcript or not listening or question_id != current_question.id:
@@ -470,8 +537,15 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             schedule_answer_flush()
                         elif kind == 'conversation.item.input_audio_transcription.failed':
                             item_id = event.get('item_id')
-                            if isinstance(item_id, str):
-                                seen_items.add(item_id)
+                            if not isinstance(item_id, str) or item_id in seen_items:
+                                continue
+                            question_id = utterance_questions.pop(item_id, None)
+                            if question_id is None:
+                                continue
+                            seen_items.add(item_id)
+                            pending_transcriptions.discard(item_id)
+                            if question_id != current_question.id or not listening:
+                                continue
                             # Never assess only the successful fragments of an answer.
                             seen_items.update(pending_transcriptions)
                             pending_transcriptions.clear()
@@ -495,7 +569,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                 continue
                             listening = False
                             cancel_answer_flush()
-                            transcript = ' '.join(part for _, part in sorted(answer_segments))
+                            transcript = _merge_transcribed_segments(answer_segments)
                             answer_segments.clear()
                             await send({'type': 'transcript', 'speaker': 'candidate', 'text': transcript})
                             try:

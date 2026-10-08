@@ -188,6 +188,13 @@ class InterviewEngine:
         competency = self.plan.skills[self.state.skill_index]
         verification = next((v for v in self.state.verification_history if v.id == spec.verification_id), None)
         source = next((t for t in self.state.turns if verification and t.question.id == verification.source_question_id), None)
+        precomputed_follow_up_question = None
+        if (spec.action == Action.FOLLOW_UP.value and self.state.next_action
+                and self.state.next_action.get('reason') == 'specific_uncertainty'
+                and self.state.turns):
+            assessment = self.state.turns[-1].evaluation.result
+            if assessment and assessment.follow_up_required and assessment.follow_up_goal == spec.goal:
+                precomputed_follow_up_question = assessment.follow_up_question
         question = await self.generator.generate(
             spec, competency, self.state.config.target_level, self.state.questions,
             [e.model_dump(mode='json') for e in skill.evidence],
@@ -195,7 +202,8 @@ class InterviewEngine:
             {'action': spec.action, 'candidate_answer': source.answer.text if source else None,
              'verification': verification.model_dump(mode='json') if verification else None,
              'contradictions': [c.model_dump(mode='json') for c in self.state.contradictions if c.skill == skill.skill],
-             'candidate_context': self.state.candidate_context})
+             'candidate_context': self.state.candidate_context},
+            precomputed_follow_up_question=precomputed_follow_up_question)
         if self.elapsed >= self.limits.time_budget_seconds:
             self.complete('time_budget')
             return None

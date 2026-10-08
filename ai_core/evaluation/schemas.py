@@ -34,6 +34,9 @@ class EvaluationResult(Model):
     evidence: list[EvidenceDraft] = Field(default_factory=list, max_length=8)
     follow_up_required: bool
     follow_up_goal: str = Field(default='', max_length=1500)
+    # Optional for assessments made before this field was introduced. The
+    # engine still decides whether a follow-up is permitted.
+    follow_up_question: str | None = None
     recommended_difficulty: int = Field(ge=1, le=5)
     verification_outcome: Literal['resolved', 'confirmed', 'uncertain'] = 'uncertain'
 

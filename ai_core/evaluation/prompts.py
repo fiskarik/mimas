@@ -10,7 +10,11 @@ answer. Quotes are observations, not proof of all competence. Missing detail is 
 not automatically incorrect. Do not invent code execution, facts or candidate statements.
 Be conservative with vague answers and jargon. Distinguish correct reasoning from guessing.
 When a concrete uncertainty remains, propose a specific verification goal without deciding
-engine action. For a verification question, assess only its supplied misconception;
+engine action. If follow_up_required is true, also provide follow_up_question:
+ONE short concrete question in Russian about follow_up_goal, grounded in the original
+scenario. It must end with ? and must not repeat the original question or reveal the
+answer. Otherwise set follow_up_question to null. For a verification question, assess
+only its supplied misconception;
 resolved needs explicit corrected reasoning; confirmed needs an explicit repeated error;
 otherwise use uncertain. For other questions verification_outcome must be uncertain.
 Do not assign a skill level; the engine aggregates evidence across questions.'''

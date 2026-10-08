@@ -81,6 +81,43 @@ def test_approved_vacancy_follow_ups_and_verifications_stay_dynamic(kind, action
     assert len(provider.calls) == 1
 
 
+@pytest.mark.parametrize(('precomputed', 'uses_precomputed'), [
+    ('Почему изменяемый список сохраняет элементы между вызовами?', True),
+    ('Как пройти собеседование?', False),
+    ('__repeat_previous_question__', False),
+    (None, False),  # Saved assessments from before follow_up_question existed.
+])
+def test_specific_uncertainty_reuses_checked_evaluator_question(precomputed, uses_precomputed):
+    async def scenario():
+        answer = 'Изменяемый аргумент создаётся один раз.'
+        assessment = {'correctness': 'partial', 'depth': 'medium',
+                      'evidence': [{'type': 'positive', 'claim': 'Указано время создания', 'quote': 'один раз'}],
+                      'follow_up_required': True,
+                      'follow_up_goal': 'Проверить, почему изменяемый список сохраняется между вызовами',
+                      'recommended_difficulty': 3}
+        fallback_question = 'Почему изменяемый аргумент сохраняет состояние между вызовами?'
+        provider = FakeLLMProvider([])
+        engine = InterviewEngine(provider, approved_primary_questions=True)
+        first = await engine.start()
+        if precomputed == '__repeat_previous_question__':
+            assessment['follow_up_question'] = first.text
+        elif precomputed is not None:
+            assessment['follow_up_question'] = precomputed
+        provider.responses = iter([json.dumps(assessment), json.dumps({'text': fallback_question})])
+        second = await engine.submit(first.id, answer)
+        assert second.type == 'follow_up'
+        assert second.goal == assessment['follow_up_goal']
+        assert second.generation == 'llm'
+        assert second.text == (precomputed if uses_precomputed else fallback_question)
+        assert [call['operation'] for call in provider.calls] == (
+            ['evaluation'] if uses_precomputed else ['evaluation', 'follow_up'])
+        assert engine.state.questions[-1].text == second.text
+        assert any(item['event'] == 'question_generated' and item['question']['text'] == second.text
+                   for item in engine.trace)
+
+    asyncio.run(scenario())
+
+
 def test_refusal_moves_to_another_goal_not_repeated_demand():
     async def scenario():
         provider = FakeLLMProvider([json.dumps({'text':'Когда создаётся значение по умолчанию?'}),

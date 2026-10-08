@@ -28,7 +28,8 @@ def validate_scope(result: EvaluationResult, goal: str) -> None:
     # These are additional task requirements, not missing technical knowledge.
     if not any(term in goal.casefold() for term in ('аргумент', 'default', 'mutability')):
         return
-    expectations = ' '.join([*result.missing_concepts, result.follow_up_goal]).casefold()
+    expectations = ' '.join([*result.missing_concepts, result.follow_up_goal,
+                             result.follow_up_question or '']).casefold()
     for terms in [('контекст', 'context manager'), ('тест', 'test script')]:
         if not any(term in goal.casefold() for term in terms) and any(term in expectations for term in terms):
             raise ValueError('Assessment added an unrelated task outside its goal')

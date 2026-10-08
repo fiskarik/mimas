@@ -35,7 +35,7 @@ class FakeBudget:
 class FakeUpstream:
     def __init__(self, kind, questions, segments=None, inter_segment_delay=0,
                  last_transcription_delay=0, fail_last_transcription=False,
-                 drop_last_transcription=False):
+                 drop_last_transcription=False, unregistered_transcript=None):
         self.kind = kind
         self.questions = questions
         self.segments = segments or ['Мой голосовой ответ.']
@@ -43,6 +43,7 @@ class FakeUpstream:
         self.last_transcription_delay = last_transcription_delay
         self.fail_last_transcription = fail_last_transcription
         self.drop_last_transcription = drop_last_transcription
+        self.unregistered_transcript = unregistered_transcript
         self.queue = asyncio.Queue()
         self.sent = []
         self.response_number = 0
@@ -78,6 +79,12 @@ class FakeUpstream:
                                       'input_token_details': {'text_tokens': 30},
                                       'output_token_details': {'text_tokens': 20}}}})
         elif self.kind == 'stt' and event['type'] == 'input_audio_buffer.append':
+            if self.unregistered_transcript:
+                await self.queue.put({
+                    'type': 'conversation.item.input_audio_transcription.completed',
+                    'item_id': 'late-from-prior-question',
+                    'transcript': self.unregistered_transcript,
+                })
             for index, transcript in enumerate(self.segments):
                 if index:
                     await asyncio.sleep(self.inter_segment_delay)
@@ -196,12 +203,22 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
     assert len(upstreams) == 2
     assert len(submitted) == 1
     assert any(event['type'] == 'response.cancel' for event in upstreams[0].sent)
+    assert any(event == {'type': 'conversation.item.delete', 'item_id': 'spoken-1'}
+               for event in upstreams[0].sent)
     assert budget.settled
     assert budget.settled[0][1] > 0
     assert not budget.released
 
 
-def test_voice_bridge_combines_segments_before_one_submission(monkeypatch):
+@pytest.mark.parametrize('segments, expected', [
+    (['Сначала проверю данные,', 'затем предложу решение.'],
+     'Сначала проверю данные, затем предложу решение.'),
+    (['Сначала проверю данные,', 'Сначала проверю данные, затем предложу решение.'],
+     'Сначала проверю данные, затем предложу решение.'),
+    (['Сначала проверю данные, затем', 'данные, затем предложу решение.'],
+     'Сначала проверю данные, затем предложу решение.'),
+])
+def test_voice_bridge_combines_segments_before_one_submission(monkeypatch, segments, expected):
     question = SimpleNamespace(id='q1', text='Объясните порядок действий.')
     row = SimpleNamespace(state='fake-state', pending=None, started=time.time())
     upstreams = []
@@ -214,7 +231,7 @@ def test_voice_bridge_combines_segments_before_one_submission(monkeypatch):
 
     def fake_connect(url, **kwargs):
         stream = FakeUpstream('stt' if not upstreams else 'tts', [question],
-                              segments=['Сначала проверю данные,', 'затем предложу решение.'],
+                              segments=segments, unregistered_transcript='Prior answer.',
                               inter_segment_delay=0.02, last_transcription_delay=0.12)
         upstreams.append(stream)
         return stream
@@ -248,12 +265,12 @@ def test_voice_bridge_combines_segments_before_one_submission(monkeypatch):
                 'speech_started', 'speech_stopped', 'speech_started', 'speech_stopped',
                 'transcript', 'state']
             assert events[4] == {'type': 'transcript', 'speaker': 'candidate',
-                                 'text': 'Сначала проверю данные, затем предложу решение.'}
+                                 'text': expected}
             ws.send_json({'type': 'stop'})
 
     assert len(submitted) == 1
     assert submitted[0].question_id == question.id
-    assert submitted[0].text == 'Сначала проверю данные, затем предложу решение.'
+    assert submitted[0].text == expected
 
 
 @pytest.mark.parametrize('stt_fails, ai_fails, stt_times_out', [
@@ -329,6 +346,22 @@ def test_voice_bridge_error_keeps_complete_answer_or_requests_retry(
         assert any(event == {'type': 'transcript', 'speaker': 'candidate',
                              'text': submitted[0].text} for event in events)
         assert 'Ответ сохранён' in events[-1]['message']
+
+
+@pytest.mark.parametrize('segments, expected', [
+    ([(0, 'Я беру ведро и швабру'),
+      (1, 'Я беру ведро и швабру и начинаю уборку')],
+     'Я беру ведро и швабру и начинаю уборку'),
+    ([(0, 'Я мою полы в коридоре'),
+      (1, 'полы в коридоре, затем в кабинете')],
+     'Я мою полы в коридоре затем в кабинете'),
+    ([(0, 'Я выберу средство'), (1, 'средство для ламината')],
+     'Я выберу средство для ламината'),
+    ([(0, 'да'), (1, 'да, я понял')], 'да да, я понял'),
+    ([(0, 'вода'), (1, 'вода')], 'вода'),
+])
+def test_merge_transcribed_segments(segments, expected):
+    assert voice._merge_transcribed_segments(segments) == expected
 
 
 def test_voice_spend_reserves_windows_before_audio_and_releases_idle():

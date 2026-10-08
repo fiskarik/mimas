@@ -19,5 +19,6 @@ def check_materialization(result: EvaluationResult, answer: str) -> EvaluationRe
         quote=quote)]
     values = result.model_dump()
     values.update(correctness='partial', evidence=[e.model_dump() for e in evidence],
-                  follow_up_required=True, follow_up_goal='Как потребить элементы итератора без накопления списка?')
+                  follow_up_required=True, follow_up_goal='Как потребить элементы итератора без накопления списка?',
+                  follow_up_question=None)
     return EvaluationResult.model_validate(values)

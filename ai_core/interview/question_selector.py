@@ -1,5 +1,6 @@
 import logging
 import re
+from difflib import SequenceMatcher
 
 from ai_core.interview.planner import Competency
 from ai_core.interview.schemas import GeneratedQuestion, Question, QuestionSpec
@@ -27,6 +28,34 @@ Ask qualitative scaling or what is retained. Avoid multi-part questions joined b
 log = logging.getLogger(__name__)
 
 
+def _precomputed_follow_up_is_valid(text: str, spec: QuestionSpec, history: list[Question]) -> bool:
+    """Use the evaluator's question only when it is a narrow, distinct question.
+
+    A lexical goal check is intentionally conservative: uncertain output falls
+    back to the dedicated question generator instead of bypassing review.
+    """
+    if spec.action != 'FOLLOW_UP' or not spec.parent_id:
+        return False
+    if (len(text) < 12 or len(text) > 350 or '\n' in text or ';' in text
+            or text.count('?') != 1 or not text.endswith('?')
+            or re.search(r'[.!?]\s+', text[:-1])):
+        return False
+    if re.search(r'(?m)^\s*\d+[.)]\s', text):
+        return False
+    normalized = re.sub(r'\W+', ' ', text.casefold()).strip()
+    if any(SequenceMatcher(None, normalized,
+                           re.sub(r'\W+', ' ', question.text.casefold()).strip()).ratio() >= 0.94
+           for question in history if question.skill == spec.skill):
+        return False
+    boilerplate = {'проверить', 'проверка', 'уточнить', 'объяснить', 'вопрос', 'ответ', 'кандидат',
+                   'почему', 'каким', 'какие', 'когда', 'между', 'после', 'перед', 'через'}
+    def terms(value: str) -> set[str]:
+        return {word[:4] for word in re.findall(r'[\w]+', value.casefold())
+                if len(word) >= 5 and word not in boilerplate}
+    goal_terms = terms(spec.goal)
+    return bool(goal_terms) and len(terms(text) & goal_terms) >= min(2, len(goal_terms))
+
+
 class QuestionGenerator:
     def __init__(self, provider: LLMProvider, *, approved_primary_questions: bool = False):
         self.provider = provider
@@ -34,7 +63,11 @@ class QuestionGenerator:
 
     async def generate(self, spec: QuestionSpec, competency: Competency, level: Level,
                        history: list[Question], evidence: list[dict], misconceptions: list[dict],
-                       primary_index: int, context: dict | None = None) -> Question:
+                       primary_index: int, context: dict | None = None,
+                       precomputed_follow_up_question: str | None = None) -> Question:
+        if precomputed_follow_up_question and _precomputed_follow_up_is_valid(
+                precomputed_follow_up_question, spec, history):
+            return Question(**spec.model_dump(), text=precomputed_follow_up_question, generation='llm')
         payload = {'spec': spec.model_dump(mode='json'), 'target_level': level.value,
                    'reference_question': competency.questions[primary_index % len(competency.questions)],
                    'previous_questions': [q.text for q in history if q.skill == spec.skill],
