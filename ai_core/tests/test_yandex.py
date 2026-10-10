@@ -258,12 +258,21 @@ def test_postgres_budget_concurrent_reservations(monkeypatch):
         engine.dispose()
 
 
-def test_monthly_limit_environment_can_only_lower_cap(monkeypatch):
+def test_monthly_limit_is_optional_and_can_be_reenabled(monkeypatch):
     db = MemoryDatabase()
+    monkeypatch.delenv('MIMAS_AI_MONTHLY_LIMIT_RUB', raising=False)
+    unlimited = YandexBudget(db)
+    assert unlimited.limit_rub is None
+    assert unlimited.status()['limit_rub'] is None
+    unlimited.reserve('llm', 'question', Decimal('1500'))
+    monkeypatch.setenv('MIMAS_AI_MONTHLY_LIMIT_RUB', '0')
+    unlimited = YandexBudget(db)
+    assert unlimited.limit_rub is None
+    unlimited.reserve('llm', 'question', Decimal('10'))
     monkeypatch.setenv('MIMAS_AI_MONTHLY_LIMIT_RUB', '5000')
-    assert YandexBudget(db).limit_rub == Decimal('1000')
+    assert YandexBudget(db).limit_rub == Decimal('5000.0000')
     monkeypatch.setenv('MIMAS_AI_MONTHLY_LIMIT_RUB', '0.40')
-    budget = YandexBudget(db)
+    budget = YandexBudget(MemoryDatabase())
     assert budget.limit_rub == Decimal('0.4000')
     budget.reserve('llm', 'question', Decimal('0.30'))
     with pytest.raises(BudgetExceeded):

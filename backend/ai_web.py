@@ -73,8 +73,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
     # Fixed lock pool avoids accumulating locks per session. Deployment is one worker.
     locks = [asyncio.Lock() for _ in range(32)]
     assessment_gate = asyncio.Lock()
-    daily_limit = int(os.getenv('MIMAS_MAX_ASSESSMENTS_PER_DAY',
-                                '10' if os.getenv('MIMAS_ENV', '').lower() == 'production' else '0'))
+    daily_limit = int(os.getenv('MIMAS_MAX_ASSESSMENTS_PER_DAY', '0'))
     if daily_limit < 0:
         raise ValueError('MIMAS_MAX_ASSESSMENTS_PER_DAY must be nonnegative')
 

@@ -1,4 +1,4 @@
-"""A PostgreSQL-backed, process-safe estimated Yandex AI spending guard.
+"""PostgreSQL-backed, process-safe estimated Yandex AI spending ledger.
 
 The ledger reserves conservative amounts before paid requests and records
 measured or estimated usage afterwards. Yandex billing remains authoritative.
@@ -20,7 +20,6 @@ from backend.database import Base
 
 
 RUB = Decimal('0.0001')
-DEFAULT_MONTHLY_LIMIT_RUB = Decimal('1000')
 
 
 class BudgetExceeded(Exception):
@@ -61,7 +60,7 @@ def _rub(value) -> Decimal:
 
 
 def current_month() -> str:
-    # MIMAS applies its own monthly guard in Moscow calendar time.
+    # Group usage by Moscow calendar month.
     return datetime.now(timezone(timedelta(hours=3))).strftime('%Y-%m')
 
 
@@ -72,12 +71,16 @@ class YandexBudget:
     creates the schema; no create_all is performed here.
     """
 
-    def __init__(self, database, *, limit_rub=DEFAULT_MONTHLY_LIMIT_RUB,
+    def __init__(self, database, *, limit_rub=None,
                  reservation_ttl_seconds=1800):
         self.database = database
-        configured = os.getenv('MIMAS_AI_MONTHLY_LIMIT_RUB', str(DEFAULT_MONTHLY_LIMIT_RUB))
-        # The environment can lower the pilot cap, never raise it above 1000 RUB.
-        self.limit_rub = min(_rub(limit_rub), _rub(configured), DEFAULT_MONTHLY_LIMIT_RUB)
+        configured = os.getenv('MIMAS_AI_MONTHLY_LIMIT_RUB', '').strip()
+        # An unset or zero limit disables MIMAS's spending cap while retaining
+        # reservation and usage accounting. A positive value opts back in.
+        configured_limit = _rub(configured) if configured else Decimal('0')
+        limits = [value for value in (_rub(limit_rub) if limit_rub is not None else None,
+                                      configured_limit) if value is not None and value > 0]
+        self.limit_rub = min(limits) if limits else None
         self.reservation_ttl_seconds = reservation_ttl_seconds
 
     def _month_row(self, session, month: str):
@@ -117,7 +120,8 @@ class YandexBudget:
         with self.database.session(write=True) as session:
             row = self._month_row(session, month)
             self._expire(session, row, now)
-            exceeded = row.spent_rub + row.reserved_rub + estimate > self.limit_rub
+            exceeded = (self.limit_rub is not None and
+                        row.spent_rub + row.reserved_rub + estimate > self.limit_rub)
             if not exceeded:
                 row.reserved_rub += estimate
                 session.add(YandexCostEntry(
@@ -166,6 +170,7 @@ class YandexBudget:
         month = current_month()
         with self.database.session() as session:
             row = session.get(YandexBudgetMonth, month)
-            return {'month': month, 'limit_rub': str(self.limit_rub),
+            return {'month': month,
+                    'limit_rub': str(self.limit_rub) if self.limit_rub is not None else None,
                     'spent_rub': str(row.spent_rub if row else Decimal('0')),
                     'reserved_rub': str(row.reserved_rub if row else Decimal('0'))}

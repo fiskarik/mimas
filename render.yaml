@@ -14,13 +14,13 @@ services:
       - key: YANDEX_MODEL
         value: deepseek-v4.1-flash
       - key: MIMAS_MAX_ASSESSMENTS_PER_DAY
-        value: "10"
+        value: "0"
       - key: MIMAS_MAX_CANDIDATES_PER_DAY
         value: "50"
       - key: MIMAS_MAX_COMPANY_APPLICATIONS_PER_DAY
         value: "20"
       - key: MIMAS_AI_MONTHLY_LIMIT_RUB
-        value: "1000"
+        value: "0"
       - key: DATABASE_URL
         sync: false
       - key: COMPANY_KEY
