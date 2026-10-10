@@ -285,13 +285,16 @@ def test_employer_report_requires_matching_vacancy_owner(monkeypatch):
         report_url = '/api/market/company/assessments/legacy-test-session'
         assert client.get(report_url, headers=other).status_code == 404
         assert client.get('/api/market/company/candidates', headers=other).json() == []
-        assert client.get(report_url, headers=owner).status_code == 409
+        early_report = client.get(report_url, headers=owner)
+        assert early_report.status_code == 200
+        assert early_report.json()['session']['recording_status'] == 'pending'
         pending = client.get('/api/market/company/candidates', headers=owner).json()
-        assert pending[0]['status'] == 'recording_pending'
-        assert pending[0]['summary'] is None
+        assert pending[0]['status'] == 'completed'
+        assert pending[0]['recording_status'] == 'pending'
+        assert pending[0]['summary'] is not None
         candidate_key = {'X-Candidate-Token': signup['token']}
         own = client.get('/api/market/me', headers=candidate_key).json()['assessments'][vacancy['id']]
-        assert own['report'] is None
+        assert own['report'] is not None
         assert own['recording_status'] == 'pending'
         with database.session(write=True) as db:
             db.add(VideoRecording(session_id='legacy-test-session',

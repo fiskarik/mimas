@@ -2,9 +2,11 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import secrets
 import time
+from contextlib import suppress
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
@@ -16,16 +18,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.database import Base, Database
 from backend.marketplace import CandidateAssessment, CandidateInterest, candidate_from_token
 from ai_core.interview.engine import InterviewEngine
-from ai_core.interview.schemas import InterviewInput
+from ai_core.interview.schemas import CandidateAnswer, InterviewInput, MAX_INTERVIEW_SECONDS
 from ai_core.models import Level
-from ai_core.interview.schemas import CandidateAnswer
 from ai_core.interview.state import InterviewState, Phase
+from backend.interview_completion import CompletionError, complete_without_ai
 from ai_core.llm.factory import create_llm_provider, llm_readiness
 from ai_core.llm.base import ProviderError
 from backend.yandex_budget import BudgetExceeded, YandexBudget
 from fastapi.responses import JSONResponse
 from backend.ai_presenter import session_view as view
 from ai_core.interview.events import RuntimeEvent
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AISession(Base):
@@ -40,6 +44,13 @@ class AISession(Base):
     candidate_id: Mapped[str | None] = mapped_column(Text)
     opportunity_id: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[int] = mapped_column(Integer, default=0, server_default='0')
+
+
+def interview_deadline(row: AISession, state: InterviewState) -> float | None:
+    """Absolute deadline; old sessions with a 30-minute setting are capped too."""
+    if state.phase == Phase.CREATED or state.started_at is None:
+        return None
+    return row.started + min(state.limits.time_budget_seconds, MAX_INTERVIEW_SECONDS)
 
 
 class SessionCreate(BaseModel):
@@ -107,6 +118,41 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             if engine.started is not None:
                 stored.started = engine.started
 
+    def finish_without_ai(row: AISession, reason: str) -> AISession:
+        """The caller holds the session lock; completion never calls the provider."""
+        try:
+            state, trace = complete_without_ai(
+                InterviewState.model_validate_json(row.state), row.pending, row.trace, reason)
+        except CompletionError as exc:
+            raise HTTPException(409, str(exc)) from None
+        with database.session(write=True) as db:
+            stored = db.get(AISession, row.id)
+            stored.state = state.model_dump_json()
+            stored.trace = trace
+            stored.pending = None
+        return _reload(row.id)
+
+    def _reload(iid: str) -> AISession:
+        with database.session() as db:
+            return db.get(AISession, iid)
+
+    def expire_locked(row: AISession) -> AISession:
+        state = InterviewState.model_validate_json(row.state)
+        deadline = interview_deadline(row, state)
+        if deadline is not None and state.phase != Phase.COMPLETED and time.time() >= deadline:
+            return finish_without_ai(row, 'time_budget')
+        return row
+
+    async def expire_if_due(iid: str, token: str) -> dict | None:
+        """Voice runtime can invoke this at the deadline while its socket is open."""
+        async with lock_for(iid):
+            row = load(iid, token)
+            state = InterviewState.model_validate_json(row.state)
+            deadline = interview_deadline(row, state)
+            if deadline is None or time.time() < deadline:
+                return None
+            return public_view(expire_locked(row))
+
     def public_view(row: AISession):
         result = view(row)
         if row.opportunity_id:
@@ -114,7 +160,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             with database.session() as db:
                 recording = db.get(VideoRecording, row.id)
             if not recording or recording.status != 'completed':
-                result['report'] = None
+                # Uploading video must not hide an already completed text report.
                 result['recording_required'] = True
                 result['recording_status'] = recording.status if recording else 'none'
             else:
@@ -188,12 +234,14 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             return {'id': row.id, 'token': x_candidate_token}
     @app.get('/api/ai/sessions/{iid}')
     async def get_ai_session(iid: str, x_interview_token: str | None = Header(None)):
-        return public_view(load(iid, x_interview_token, allow_archived=True))
+        async with lock_for(iid):
+            row = load(iid, x_interview_token, allow_archived=True)
+            return public_view(row if row.archived else expire_locked(row))
 
     @app.post('/api/ai/sessions/{iid}/start')
     async def start_ai_session(iid: str, request: Request, x_interview_token: str | None = Header(None)):
         async with lock_for(iid):
-            row = load(iid, x_interview_token)
+            row = expire_locked(load(iid, x_interview_token))
             if InterviewState.model_validate_json(row.state).phase == Phase.CREATED:
                 from backend.media import VideoRecording
                 with database.session() as db:
@@ -215,8 +263,13 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
 
     async def submit_answer(iid: str, body: CandidateAnswer, token: str | None):
         async with lock_for(iid):
-            row = load(iid, token)
+            row = expire_locked(load(iid, token))
             state = InterviewState.model_validate_json(row.state)
+            if state.phase == Phase.COMPLETED:
+                saved = next((t for t in state.turns if t.question.id == body.question_id), None)
+                if saved and saved.answer == body:
+                    return public_view(row)
+                raise HTTPException(409, 'Интервью завершено; этот ответ не сохранён.')
             existing = next((t for t in state.turns if t.question.id == body.question_id), None)
             if existing:
                 if existing.answer.text != body.text:
@@ -254,7 +307,9 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         if body.type not in ('PASTE_DETECTED', 'COPY_DETECTED', 'FOCUS_LOST', 'FOCUS_RETURNED'):
             raise HTTPException(422, 'Это событие не поддерживается данным endpoint.')
         async with lock_for(iid):
-            row = load(iid, x_interview_token)
+            row = expire_locked(load(iid, x_interview_token))
+            if InterviewState.model_validate_json(row.state).phase == Phase.COMPLETED:
+                raise HTTPException(409, 'Интервью уже завершено.')
             engine = restore(row)
             try:
                 outcome = await engine.handle(body)
@@ -265,19 +320,10 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
     @app.post('/api/ai/sessions/{iid}/finish')
     async def finish_ai_session(iid: str, x_interview_token: str | None = Header(None)):
         async with lock_for(iid):
-            row = load(iid, x_interview_token)
-            state = InterviewState.model_validate_json(row.state)
-            if row.pending:
-                raise HTTPException(409, 'Сначала повторите обработку сохранённого ответа.')
-            if state.phase == Phase.CREATED:
-                raise HTTPException(409, 'Сначала начните интервью.')
-            if state.phase != Phase.COMPLETED:
-                engine = restore(row)
-                if state.phase != Phase.WAITING_FOR_ANSWER:
-                    raise HTTPException(409, 'Сначала продолжите обработку интервью.')
-                await engine.handle(RuntimeEvent(type='INTERVIEW_FINISH_REQUESTED'))
-                save(row, engine)
-            return public_view(load(iid, x_interview_token))
+            row = expire_locked(load(iid, x_interview_token))
+            if InterviewState.model_validate_json(row.state).phase != Phase.COMPLETED:
+                row = finish_without_ai(row, 'candidate_stopped')
+            return public_view(row)
 
 
 
@@ -288,9 +334,10 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
     async def transcribe_ai_answer(iid: str, audio: UploadFile = File(...),
                                    x_interview_token: str | None = Header(None)):
         from backend.yandex_services import configured_yandex_services, YandexServiceError, MAX_AUDIO_BYTES
-        row = load(iid, x_interview_token)
-        if InterviewState.model_validate_json(row.state).phase != Phase.WAITING_FOR_ANSWER:
-            raise HTTPException(409, 'Сначала начните интервью.')
+        async with lock_for(iid):
+            row = expire_locked(load(iid, x_interview_token))
+            if InterviewState.model_validate_json(row.state).phase != Phase.WAITING_FOR_ANSWER:
+                raise HTTPException(409, 'Интервью не ожидает ответа.')
         if audio.content_type not in ('audio/webm', 'video/webm', 'audio/webm;codecs=opus'):
             raise HTTPException(415, 'Загрузите запись WebM.')
         payload = await audio.read(MAX_AUDIO_BYTES + 1)
@@ -305,4 +352,45 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         return {'text': transcript}
 
     from backend.voice_runtime import register_voice_route
-    register_voice_route(app, database, load, public_view, submit_answer)
+    register_voice_route(app, database, load, public_view, submit_answer, expire_if_due)
+
+    sweep_task: asyncio.Task | None = None
+
+    async def sweep_expired_interviews():
+        # Browser timers are advisory: this also completes an interview if its
+        # tab closes, so the candidate and employer can later see the report.
+        while True:
+            try:
+                cutoff = time.time() - MAX_INTERVIEW_SECONDS
+                with database.session() as db:
+                    ids = list(db.scalars(
+                        select(AISession.id).where(
+                            AISession.archived == 0, AISession.started <= cutoff,
+                            AISession.state.like('%"started_at":"%'),
+                            AISession.state.not_like('%"phase":"COMPLETED"%'))
+                        .order_by(AISession.started).limit(100)))
+                for iid in ids:
+                    async with lock_for(iid):
+                        row = _reload(iid)
+                        if row and not row.archived:
+                            expire_locked(row)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOGGER.exception('Failed to complete expired interviews')
+            await asyncio.sleep(10)
+
+    async def start_expiration_sweep():
+        nonlocal sweep_task
+        sweep_task = asyncio.create_task(sweep_expired_interviews())
+
+    async def stop_expiration_sweep():
+        nonlocal sweep_task
+        if sweep_task is not None:
+            sweep_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweep_task
+            sweep_task = None
+
+    app.router.add_event_handler('startup', start_expiration_sweep)
+    app.router.add_event_handler('shutdown', stop_expiration_sweep)

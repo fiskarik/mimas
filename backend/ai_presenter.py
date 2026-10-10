@@ -1,6 +1,7 @@
 """Allowlisted candidate view; internal assessment is only exposed in final reports."""
 import json
 from ai_core.interview.state import InterviewState, Phase
+from ai_core.interview.schemas import MAX_INTERVIEW_SECONDS
 from ai_core.reports.generator import generate_report
 
 
@@ -15,6 +16,8 @@ def session_view(row) -> dict:
     return {'id': row.id, 'model': row.model, 'phase': state.phase,
             'archived': archived, 'read_only': archived,
             'interview_id': row.id, 'status': 'completed' if completed else 'created' if state.phase == Phase.CREATED else 'in_progress',
+            'deadline_at': (row.started + min(state.limits.time_budget_seconds, MAX_INTERVIEW_SECONDS)
+                            if state.started_at is not None else None),
             'action': (state.next_action or {}).get('action', 'ASK_QUESTION'),
             'progress': {'questions_answered':len(state.turns), 'skills_completed':sum(s.completed for s in state.skills), 'skills_total':len(state.skills)},
             'skill_names': skill_names,
@@ -24,6 +27,9 @@ def session_view(row) -> dict:
             'current_question': public_question(state.questions[-1]) if state.phase == Phase.WAITING_FOR_ANSWER else None,
             'pending_answer': json.loads(row.pending) if row.pending else None,
             'max_questions': state.limits.max_questions,
-            'evaluation_notice': ('Ответ сохранён, но AI не смог его оценить. Причина: ' +
-                                  ', '.join(last.evaluation.failures)) if last and last.evaluation.status == 'unavailable' else None,
+            'evaluation_notice': (
+                'Ответ сохранён без оценки: интервью завершилось до обработки AI.'
+                if 'evaluation_skipped_on_finish' in last.evaluation.failures else
+                'Ответ сохранён, но AI не смог его оценить. Причина: ' + ', '.join(last.evaluation.failures)
+            ) if last and last.evaluation.status == 'unavailable' else None,
             'report': generate_report(state, mode='live') if completed else None}

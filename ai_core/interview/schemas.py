@@ -5,6 +5,8 @@ from pydantic import Field, model_validator
 
 from ai_core.models import Level, Model, QuestionType, Text
 
+MAX_INTERVIEW_SECONDS = 20 * 60
+
 
 class InterviewInput(Model):
     role: Text = 'Python Backend Developer'
@@ -17,7 +19,7 @@ class Limits(Model):
     max_follow_ups_per_question: int = Field(default=2, ge=0, le=3)
     minimum_evidence_per_skill: int = Field(default=2, ge=1, le=5)
     no_answer_primary_limit: int = Field(default=2, ge=1, le=5)
-    time_budget_seconds: int = Field(default=1800, ge=1, le=3600)
+    time_budget_seconds: int = Field(default=MAX_INTERVIEW_SECONDS, ge=1, le=3600)
 
 
 class QuestionSpec(Model):

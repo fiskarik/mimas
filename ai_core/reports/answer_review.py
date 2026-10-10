@@ -25,6 +25,8 @@ def review_answer(turn: Turn) -> dict:
               'strengths': [], 'errors': [], 'uncertainties': [], 'missing_concepts': [],
               'follow_up_goal': '', 'failures': turn.evaluation.failures}
     if turn.evaluation.status != 'evaluated' or result is None:
+        if 'evaluation_skipped_on_finish' in turn.evaluation.failures:
+            review['reason'] = 'Ответ сохранён, но не оценён: интервью завершилось до обработки AI.'
         return review
     if result.response_kind != 'substantive' or result.correctness == 'insufficient_evidence':
         review['reason'] = 'В ответе недостаточно проверяемых технических оснований. Это не ноль баллов.'

@@ -360,8 +360,7 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             ready = bool(recording and recording.status == 'completed')
             presented['recording_status'] = 'completed' if ready else 'pending'
             if not ready and presented['report']:
-                presented['report'] = None
-                presented['status'] = 'recording_pending'
+                presented['recording_pending'] = True
             views[item.opportunity_id] = presented
         assessment_opportunities = {
             vacancy_id: {'id': vacancy.id, 'title': vacancy.title,
@@ -598,17 +597,10 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             if not report:
                 continue
             recording = recordings.get(session.id)
-            if not recording or recording.status != 'completed':
-                result.append({'profile': profile_view(profile), 'assessment_id': session.id,
-                               'opportunity_id': assessment.opportunity_id,
-                               'status': 'recording_pending', 'summary': None,
-                               'skills': [], 'quality_status': None,
-                               'match': match(profile, owned[assessment.opportunity_id]),
-                               'interested': True})
-                continue
             question_texts = {q['id']: q['text'] for q in public_session['questions']}
             item = {'profile': profile_view(profile), 'assessment_id': session.id,
                     'opportunity_id': assessment.opportunity_id, 'status': 'completed',
+                    'recording_status': 'completed' if recording and recording.status == 'completed' else 'pending',
                     'summary': report['overall_technical_summary'],
                     'skills': [{**{k: skill[k] for k in ('skill', 'demonstrated_level', 'status',
                                                        'answers_received', 'evaluated_answers')},
@@ -640,9 +632,8 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             recording = db.get(VideoRecording, session_id)
         if not session or not profile:
             raise HTTPException(404, 'Отчёт не найден')
-        if not recording or recording.status != 'completed':
-            raise HTTPException(409, 'Дождитесь завершения загрузки записи')
         presented = session_view(session)
+        presented['recording_status'] = 'completed' if recording and recording.status == 'completed' else 'pending'
         if not presented['report']:
             raise HTTPException(409, 'Интервью ещё не завершено')
         return {'opportunity': opportunity_view(opportunity),
