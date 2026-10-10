@@ -430,6 +430,9 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                 # One manual commit covers the entire held answer,
                                 # including pauses. No VAD timer can cut it short.
                                 await stt_send({'type': 'input_audio_buffer.commit'})
+                                # Yandex starts transcription only after an explicit response.
+                                # This response stays on the STT socket and is never played.
+                                await stt_send({'type': 'response.create'})
                                 schedule_answer_flush()
                             continue
                         if kind != 'audio':
@@ -476,12 +479,13 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         kind = event.get('type')
                         if kind == 'input_audio_buffer.committed':
                             item_id = event.get('item_id')
-                            if not isinstance(item_id, str):
-                                continue
                             if listening and finish_requested_at and pending_item_id is None:
-                                pending_item_id = item_id
-                                utterance_questions[item_id] = current_question.id
-                            else:
+                                # Yandex can acknowledge a commit with item_id=null,
+                                # then send the real ID on the transcription event.
+                                pending_item_id = item_id if isinstance(item_id, str) else ''
+                                if isinstance(item_id, str):
+                                    utterance_questions[item_id] = current_question.id
+                            elif isinstance(item_id, str):
                                 await retire_stt_item(item_id)
                         elif kind == 'response.created':
                             # The transcription socket never supplies questions
@@ -494,9 +498,12 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             if not isinstance(item_id, str) or item_id in seen_items:
                                 continue
                             seen_items.add(item_id)
-                            question_id = utterance_questions.pop(item_id, None)
-                            if (question_id != current_question.id or item_id != pending_item_id
-                                    or not listening or not finish_requested_at):
+                            question_id = utterance_questions.pop(
+                                item_id, current_question.id if pending_item_id == '' else None)
+                            if (question_id != current_question.id
+                                    or pending_item_id not in (item_id, '')
+                                    or not listening or not finish_requested_at
+                                    or item_id in deleted_stt_items):
                                 continue
                             pending_item_id = None
                             cancel_answer_flush()
@@ -530,7 +537,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                 await send({'type': 'speech_stopped'})
                         elif kind == 'conversation.item.input_audio_transcription.failed':
                             item_id = event.get('item_id')
-                            if isinstance(item_id, str) and item_id == pending_item_id:
+                            if isinstance(item_id, str) and pending_item_id in (item_id, ''):
                                 raise VoiceProtocolError('Распознавание не удалось. Подключитесь заново и повторите ответ.')
                         elif kind == '_transcription_timeout':
                             if (event.get('generation') == flush_generation and listening

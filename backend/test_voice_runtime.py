@@ -35,7 +35,8 @@ class FakeBudget:
 class FakeUpstream:
     def __init__(self, kind, questions, transcript='Мой голосовой ответ.',
                  transcription_delay=0, fail_transcription=False,
-                 drop_transcription=False, unregistered_transcript=None):
+                 drop_transcription=False, unregistered_transcript=None,
+                 null_committed_item_id=False):
         self.kind = kind
         self.questions = questions
         self.transcript = transcript
@@ -43,6 +44,8 @@ class FakeUpstream:
         self.fail_transcription = fail_transcription
         self.drop_transcription = drop_transcription
         self.unregistered_transcript = unregistered_transcript
+        self.null_committed_item_id = null_committed_item_id
+        self.pending_transcription_item_id = None
         self.queue = asyncio.Queue()
         self.sent = []
         self.response_number = 0
@@ -94,8 +97,14 @@ class FakeUpstream:
         elif self.kind == 'stt' and event['type'] == 'input_audio_buffer.commit':
             self.commit_number += 1
             item_id = f'spoken-{self.commit_number}'
-            await self.queue.put({'type': 'input_audio_buffer.committed', 'item_id': item_id})
+            await self.queue.put({'type': 'input_audio_buffer.committed',
+                                  'item_id': None if self.null_committed_item_id else item_id})
+            self.pending_transcription_item_id = item_id
             self.audio_chunks = 0
+        elif self.kind == 'stt' and event['type'] == 'response.create':
+            item_id = self.pending_transcription_item_id
+            assert item_id is not None, 'Commit must precede transcription response'
+            self.pending_transcription_item_id = None
 
             async def deliver():
                 await asyncio.sleep(self.transcription_delay)
@@ -130,6 +139,7 @@ def _fake_state(question, pending=None, time_budget_seconds=1800):
 def _harness(monkeypatch, questions, *, transcript='Мой голосовой ответ.',
              transcription_delay=0, fail_transcription=False, drop_transcription=False,
              unregistered_transcript=None, provider_error=False,
+             null_committed_item_id=False,
              time_budget_seconds=1800, expire_if_due=None):
     current = {'index': 0}
     row = SimpleNamespace(state='fake-state', pending=None, started=time.time())
@@ -149,7 +159,8 @@ def _harness(monkeypatch, questions, *, transcript='Мой голосовой о
                               transcription_delay=transcription_delay,
                               fail_transcription=fail_transcription,
                               drop_transcription=drop_transcription,
-                              unregistered_transcript=unregistered_transcript)
+                              unregistered_transcript=unregistered_transcript,
+                              null_committed_item_id=null_committed_item_id)
         upstreams.append(stream)
         assert kwargs['additional_headers']['Authorization'] == 'Api-Key secret'
         assert 'speech-realtime-deepseek-v4-flash' in url
@@ -247,6 +258,31 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
                for e in upstreams[0].sent)
     assert any(e['type'] == 'response.cancel' for e in upstreams[0].sent)
     assert budget.settled and budget.settled[0][1] > 0
+
+
+def test_yandex_null_commit_id_still_saves_transcript(monkeypatch):
+    # Real Realtime sends item_id=null on the commit acknowledgement, then
+    # supplies a real ID only with the transcription event.
+    question = SimpleNamespace(id='q1', text='Как проверить сварной шов?')
+    app, _, upstreams, submitted, _ = _harness(
+        monkeypatch, [question], transcript='Осматриваю шов и проверяю дефекты.',
+        null_committed_item_id=True)
+    with TestClient(app) as client:
+        with client.websocket_connect('/api/ai/sessions/interview/voice') as ws:
+            _start_voice(ws, question)
+            ws.send_json({'type': 'start_answer'})
+            ws.send_json({'type': 'audio',
+                          'audio': base64.b64encode(b'\x01\x00' * 100).decode()})
+            ws.send_json({'type': 'finish_answer'})
+            transcript = ws.receive_json()
+            assert transcript == {'type': 'transcript', 'speaker': 'candidate',
+                                  'text': 'Осматриваю шов и проверяю дефекты.'}
+            assert ws.receive_json()['type'] == 'state'
+            ws.send_json({'type': 'stop'})
+    assert len(submitted) == 1
+    sent_types = [event['type'] for event in upstreams[0].sent]
+    assert sent_types.index('input_audio_buffer.commit') < sent_types.index('response.create')
+    assert sent_types.count('response.create') == 1
 
 
 @pytest.mark.parametrize('delay', [0, 0.12])
