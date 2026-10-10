@@ -1,64 +1,170 @@
 'use client';
 
-import {useEffect, useRef, useState} from 'react';
-import {ArrowDown, ArrowRight, ArrowUpRight, Check, Code2, Mic, ShieldCheck, Video, X} from 'lucide-react';
+import {ArrowDown, ArrowRight, ArrowUpRight, Check, ClipboardCheck, Mic, ShieldCheck, Video} from 'lucide-react';
 import {IntelligenceSection, InterviewOrb, MotionToggle, MotionVideo} from './motion';
 
 export type OrbState = 'idle' | 'speaking' | 'listening' | 'thinking' | 'saved';
-export const stateNames: Record<OrbState, string> = {idle: 'Готов к диалогу', speaking: 'Озвучиваю вопрос', listening: 'Слушаю ответ', thinking: 'Обрабатываю ответ', saved: 'Ответ сохранён'};
+export const stateNames: Record<OrbState, string> = {
+  idle: 'Готов к диалогу',
+  speaking: 'Озвучиваю вопрос',
+  listening: 'Слушаю ответ',
+  thinking: 'Обрабатываю ответ',
+  saved: 'Ответ сохранён',
+};
 
-// Shared video sphere supplied for mimas.
 export const GlassOrb = InterviewOrb;
 
+const interviewSteps = [
+  {
+    number: '01',
+    icon: <Mic/>,
+    title: 'Расскажите',
+    text: 'Вопросы по профессии и рабочим ситуациям. Отвечайте голосом и объясняйте свой подход.',
+    label: 'ГОЛОСОВОЙ ДИАЛОГ',
+  },
+  {
+    number: '02',
+    icon: <ClipboardCheck/>,
+    title: 'Разберите ситуацию',
+    text: 'Например, сварщику предложат объяснить подготовку соединения и действия при дефекте шва.',
+    label: 'ПРОФЕССИОНАЛЬНЫЕ ЗНАНИЯ',
+  },
+  {
+    number: '03',
+    icon: <ShieldCheck/>,
+    title: 'Изучите отчёт',
+    text: 'В отчёте сохраняются ответы и основания оценки. Решение о найме принимает компания.',
+    label: 'ПРОЗРАЧНЫЙ РЕЗУЛЬТАТ',
+  },
+];
+
+const sampleSkills = [
+  {skill: 'Подготовка соединения', status: 'Подход описан', text: 'Объяснил порядок очистки кромок перед сваркой.', bars: 6},
+  {skill: 'Контроль шва', status: 'Нужно уточнить', text: 'Упомянул осмотр, но не раскрыл признаки дефектов.', bars: 3},
+  {skill: 'Практический допуск', status: 'Не проверялся', text: 'Устный ответ не подтверждает практический навык или допуск.', bars: 0},
+];
+
 export function Landing({onCompany}: {onCompany: () => void}) {
-  const returnFocus = useRef<HTMLElement | null>(null);
-  const [preview, setPreview] = useState(false);
-  useEffect(() => {
-    if (!preview) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {document.body.style.overflow = previousOverflow; returnFocus.current?.focus();};
-  }, [preview]);
-  const [state, setState] = useState<OrbState>('idle');
-  const [step, setStep] = useState(0);
-  const questions = ['Почему изменяемый аргумент по умолчанию может привести к ошибкам?', 'Что произойдёт с event loop при выполнении долгой CPU-bound функции?', 'В каких случаях индекс ускоряет SQL-запрос?'];
-  const sampleReplies = ['Список в аргументе по умолчанию создаётся один раз. Его изменения сохранятся между вызовами; я бы использовал None и создавал новый список внутри функции.', 'Такая функция блокирует поток event loop. Я вынесу CPU-задачу в отдельный процесс и оставлю цикл событий свободным для запросов.', 'Индекс помогает, когда запрос выбирает небольшую часть таблицы по часто используемому условию. Решение проверю через EXPLAIN ANALYZE.'];
   return <div className="landing">
     <a className="skip-link" href="#main-content">Перейти к содержимому</a>
     <header className="landing-nav">
       <a href="/" className="brand-word" aria-label="mimas — главная"><PixelMark/>mimas</a>
-      <nav aria-label="Навигация"><a href="#how"><PixelMark/>Процесс</a><a href="#evidence"><PixelMark variant="cross"/>Результат</a><a href="#integrity"><PixelMark variant="steps"/>Прокторинг</a></nav>
-      <button className="nav-enter" onClick={onCompany}>В кабинет <ArrowUpRight size={16}/></button>
+      <nav aria-label="Навигация">
+        <a href="#how"><PixelMark/>Как работает</a>
+        <a href="#evidence"><PixelMark variant="cross"/>Отчёт</a>
+        <a href="#integrity"><PixelMark variant="steps"/>Правила</a>
+      </nav>
+      <button className="nav-enter" onClick={onCompany}>Для компании <ArrowUpRight size={16}/></button>
     </header>
     <main id="main-content">
       <section className="landing-hero" aria-labelledby="hero-title">
         <div className="hero-surface" aria-hidden="true"><MotionVideo src="/media/mimas-fluid.mp4" poster="/media/mimas-fluid-poster.webp"/></div>
-        <div className="hero-topline"><span>ИНТЕЛЛЕКТ В ОСНОВЕ ДИАЛОГА</span><MotionToggle/></div>
-        <div className="mimas-hero-panel">
-          <div className="mimas-hero-heading"><span className="mimas-hero-seal" aria-hidden="true"><PixelMark/></span><div><span className="small-kicker">НОВОЕ ПРОСТРАНСТВО ТЕХНИЧЕСКОГО НАЙМА</span><h1 id="hero-title">Навыки раскрываются <em>в разговоре.</em></h1></div></div>
-          <div className="mimas-hero-actions" aria-label="Разделы MIMAS"><button onClick={onCompany}>Для компании <ArrowUpRight size={19}/></button><a href="/?view=candidate">Для кандидата <ArrowUpRight size={19}/></a><button onClick={e => {returnFocus.current=e.currentTarget;setPreview(true);}}>Посмотреть демо <ArrowUpRight size={19}/></button></div>
-          <div className="mimas-hero-cards"><article><span>01 / КОМПАНИИ</span><h2>От вакансии<br/>к ясному решению.</h2><p>Подготовьте интервью под роль. Смотрите ответы, логику и подтверждённые навыки каждого кандидата.</p><button onClick={onCompany}>Открыть кабинет <ArrowRight size={17}/></button></article><article><span>02 / КАНДИДАТЫ</span><h2>Ваш опыт<br/>звучит сильнее.</h2><p>Выберите подходящую роль и пройдите живое техническое интервью с AI в удобном темпе.</p><a href="/?view=candidate">Найти вакансию <ArrowRight size={17}/></a></article></div>
-          <div className="mimas-hero-panel-foot"><span>mimas / 2026</span><span>Один диалог. Больше понимания.</span><a href="#how" aria-label="Посмотреть процесс"><ArrowDown size={17}/></a></div>
+        <div className="hero-topline"><span>ИНТЕРВЬЮ ПО ПРОФЕССИИ</span><MotionToggle/></div>
+        <div className="hero-copy">
+          <div className="small-kicker"><span/> MIMAS · ГОЛОСОВОЕ AI-ИНТЕРВЬЮ</div>
+          <h1 id="hero-title">За каждым <span className="hero-lemon"><PixelMark/>навыком</span><br/>стоит <span className="hero-mint"><PixelMark variant="steps"/>человек.</span></h1>
+          <div className="hero-bottom">
+            <p>Сварщик, электрик, слесарь или токарь — каждый может рассказать о своём опыте. MIMAS задаёт вопросы по вакансии и сохраняет объяснения для человека, который принимает решение.</p>
+            <div className="hero-actions">
+              <a className="primary" href="/?view=candidate">Найти вакансию <ArrowUpRight size={18}/></a>
+              <button className="hero-secondary" onClick={onCompany}>Для компании <ArrowRight size={17}/></button>
+            </div>
+          </div>
+        </div>
+        <div className="hero-footer">
+          <span className="hero-footnote">ПРОФЕССИЯ. ДИАЛОГ. ПОНЯТНЫЙ ОТЧЁТ.</span>
+          <div className="hero-process">Вакансия <span>→</span> голосовое интервью <span>→</span> отчёт</div>
+          <a className="hero-scroll" href="#how" aria-label="Перейти к описанию процесса"><ArrowDown size={18}/></a>
         </div>
       </section>
 
-      <section className="landing-manifesto" aria-labelledby="manifesto-title"><span className="small-kicker"><PixelMark/> ЧЕЛОВЕК + ТЕХНОЛОГИЯ</span><h2 id="manifesto-title">Меньше догадок.<br/><span>Больше понимания.</span></h2><p>Резюме расскажет об опыте. Диалог покажет мышление.<br/>Соединяем вопросы, практику и контекст, чтобы вы увидели главное.</p><a className="manifesto-link" href="/?view=candidate">Познакомиться с AI-интервью <ArrowUpRight size={18}/></a></section>
+      <section className="landing-manifesto" aria-labelledby="manifesto-title">
+        <span className="small-kicker"><PixelMark/> ЧЕЛОВЕК + ТЕХНОЛОГИЯ</span>
+        <h2 id="manifesto-title">Меньше догадок.<br/><span>Больше понимания.</span></h2>
+        <p>Резюме перечислит опыт. Разговор поможет понять, как кандидат рассуждает<br/>о знакомых рабочих задачах. Практические умения проверяются отдельно.</p>
+        <a className="manifesto-link" href="/?view=candidate">Смотреть вакансии <ArrowUpRight size={18}/></a>
+      </section>
 
       <IntelligenceSection/>
 
-      <section className="journey-section" id="how"><div className="section-intro"><span className="small-kicker"><PixelMark/> 01 / ПРОЦЕСС</span><h2>Один диалог.<br/><span>Больше контекста.</span></h2><p>От первого вопроса до взвешенного решения. Каждый этап добавляет ясности.</p></div><div className="journey-grid">{[{n:'01',icon:<Mic/>,title:'Расскажите',text:'Вопросы по специализации. Диалог, в котором есть место вашему ходу мысли.',label:'ДИАЛОГ С AI'},{n:'02',icon:<Code2/>,title:'Покажите',text:'Практическая задача, ваш код и объяснение выбранного решения.',label:'ОТ МЫСЛИ К КОДУ'},{n:'03',icon:<ShieldCheck/>,title:'Подтвердите',text:'Ответы, запись и события интервью. Основания для каждой оценки.',label:'ПОЛНАЯ КАРТИНА'}].map(item => <article key={item.n}><div className="journey-top"><span>{item.n} /</span>{item.icon}</div><div className={`journey-visual visual-${item.n}`} aria-hidden="true">{item.n === '01' ? <div className="signal-wave">{Array.from({length:25},(_,i)=><i key={i} style={{height:`${16 + Math.round(Math.abs(Math.sin(i * 1.7)) * (52 - Math.abs(12-i)*3))}px`}}/>)}</div> : item.n === '02' ? <div className="code-fragment"><span>def</span> find_potential():<br/><b>    return</b> skills + context</div> : <div className="signal-result"><PixelMark/><span>Навык подтверждён<small>Ответ · Код · Объяснение</small></span><Check size={18}/></div>}</div><span className="journey-label">{item.label}</span><h3>{item.title}</h3><p>{item.text}</p></article>)}</div></section>
+      <section className="journey-section" id="how">
+        <div className="section-intro">
+          <span className="small-kicker"><PixelMark/> 01 / ПРОЦЕСС</span>
+          <h2>Одна вакансия.<br/><span>Предметный разговор.</span></h2>
+          <p>Компания готовит вопросы, кандидат отвечает голосом, обе стороны видят результат.</p>
+        </div>
+        <div className="journey-grid">{interviewSteps.map(item =>
+          <article key={item.number}>
+            <div className="journey-top"><span>{item.number} /</span>{item.icon}</div>
+            <div className={'journey-visual visual-' + item.number} aria-hidden="true">
+              {item.number === '01'
+                ? <div className="signal-wave">{Array.from({length: 25}, (_, i) => <i key={i} style={{height: (16 + Math.round(Math.abs(Math.sin(i * 1.7)) * (52 - Math.abs(12-i)*3))) + 'px'}}/>)}</div>
+                : item.number === '02'
+                  ? <div className="scenario-fragment"><span>Ситуация</span><strong>Как подготовить кромки к сварке?</strong><small>Объясните порядок действий.</small></div>
+                  : <div className="signal-result"><PixelMark/><span>Ответ сохранён<small>Разбор · запись · уточнения</small></span><Check size={18}/></div>}
+            </div>
+            <span className="journey-label">{item.label}</span>
+            <h3>{item.title}</h3>
+            <p>{item.text}</p>
+          </article>)}</div>
+      </section>
 
-      <section className="evidence-section" id="evidence"><div className="evidence-copy"><span className="small-kicker"><PixelMark variant="cross"/> 02 / РЕЗУЛЬТАТ</span><h2>За оценкой<br/>есть <em>история.</em></h2><p>Откройте ответ, прочитайте код, посмотрите запись. Весь контекст — перед вами. Решение — за вами.</p><button className="hero-secondary" onClick={onCompany}>Перейти к кандидатам <ArrowUpRight size={18}/></button><span className="concept-caption">Пример оформления отчёта.<br/>Не результат реального кандидата.</span></div><div className="evidence-sheet"><div className="sheet-top"><span><PixelMark/> КАРТА НАВЫКОВ</span><span className="sample-badge">Образец</span></div><h3>Python Backend</h3><p>За каждым выводом — конкретный ответ</p>{[{skill:'Python',status:'Понимание подтверждено',text:'Объяснил изменяемые аргументы и предложил исправление.',bars:6},{skill:'AsyncIO',status:'Есть вопросы',text:'Нужно уточнить выбор подхода для CPU-bound задач.',bars:3},{skill:'SQL',status:'Недостаточно данных',text:'Не хватает оснований для оценки индексов.',bars:1}].map(item=><div className="skill-example" key={item.skill}><div><strong>{item.skill}</strong><span>{item.status}</span></div><div className="skill-bars" aria-hidden="true">{Array.from({length:12},(_,i)=><i className={i<item.bars*1.5?'filled':''} key={i}/>)}</div><p>{item.text}</p></div>)}<div className="sheet-foot"><ShieldCheck size={16}/> Решение о найме принимает человек <ArrowUpRight size={16}/></div></div></section>
+      <section className="evidence-section" id="evidence">
+        <div className="evidence-copy">
+          <span className="small-kicker"><PixelMark variant="cross"/> 02 / РЕЗУЛЬТАТ</span>
+          <h2>За оценкой<br/>есть <em>ответ.</em></h2>
+          <p>Прочитайте слова кандидата и посмотрите запись. Отчёт показывает, что удалось выяснить в разговоре и что осталось проверить на практике.</p>
+          <button className="hero-secondary" onClick={onCompany}>Открыть кабинет компании <ArrowUpRight size={18}/></button>
+          <span className="concept-caption">Пример оформления отчёта.<br/>Не результат реального кандидата.</span>
+        </div>
+        <div className="evidence-sheet">
+          <div className="sheet-top"><span><PixelMark/> РАЗБОР ОТВЕТОВ</span><span className="sample-badge">Образец</span></div>
+          <h3>Сварщик</h3><p>Выводы ограничены устными ответами</p>
+          {sampleSkills.map(item => <div className="skill-example" key={item.skill}>
+            <div><strong>{item.skill}</strong><span>{item.status}</span></div>
+            <div className="skill-bars" aria-hidden="true">{Array.from({length: 12}, (_, i) => <i className={i < item.bars * 1.5 ? 'filled' : ''} key={i}/>)}</div>
+            <p>{item.text}</p>
+          </div>)}
+          <div className="sheet-foot"><ShieldCheck size={16}/> Решение о найме принимает человек <ArrowUpRight size={16}/></div>
+        </div>
+      </section>
 
-      <section className="integrity-section" id="integrity"><div><span className="small-kicker"><PixelMark variant="steps"/> 03 / ПРОЗРАЧНОСТЬ</span><h2>Внимание к деталям.<br/><span>Уважение к человеку.</span></h2><p className="integrity-caption">Доверие начинается с понятных правил.</p></div><div className="integrity-description"><p>Предупреждения помогают соблюдать правила. События остаются на временной шкале и рассматриваются вместе с контекстом.</p><div className="availability"><span><Video size={19}/> Запись камеры и микрофона <Check size={16}/></span><span><ShieldCheck size={19}/> События вкладки и вставки <Check size={16}/></span><span className="future">В разработке · распознавание лиц и телефона</span></div></div></section>
+      <section className="integrity-section" id="integrity">
+        <div>
+          <span className="small-kicker"><PixelMark variant="steps"/> 03 / ПРОЗРАЧНОСТЬ</span>
+          <h2>Понятные правила.<br/><span>Уважение к человеку.</span></h2>
+          <p className="integrity-caption">Предупреждения не означают автоматического отказа.</p>
+        </div>
+        <div className="integrity-description">
+          <p>С согласия кандидата MIMAS сохраняет запись интервью. События ухода со страницы и другие наблюдения рассматриваются в контексте ответа, а решение остаётся за компанией.</p>
+          <div className="availability">
+            <span><Video size={19}/> Запись камеры и голоса <Check size={16}/></span>
+            <span><ShieldCheck size={19}/> События вкладки и вставки <Check size={16}/></span>
+            <span className="future">Расширение браузера для известных вкладок — по желанию</span>
+          </div>
+        </div>
+      </section>
 
-      <section className="landing-cta"><div className="cta-orbit" aria-hidden="true"><PixelMark/></div><span className="small-kicker">СЛЕДУЮЩИЙ СИЛЬНЫЙ КАНДИДАТ</span><h2>Всё начинается<br/>с <span>разговора.</span></h2><button className="primary" onClick={onCompany}>Создать приглашение <ArrowUpRight size={19}/></button><a className="hero-secondary" href="/?view=candidate">Попробовать AI-интервью <ArrowRight size={17}/></a></section>
+      <section className="landing-cta">
+        <div className="cta-orbit" aria-hidden="true"><PixelMark/></div>
+        <span className="small-kicker">ЗНАНИЯ ВАЖНО УСЛЫШАТЬ</span>
+        <h2>Всё начинается<br/>с <span>разговора.</span></h2>
+        <a className="primary" href="/?view=candidate">Найти вакансию <ArrowUpRight size={19}/></a>
+        <button className="hero-secondary" onClick={onCompany}>Разместить вакансию <ArrowRight size={17}/></button>
+      </section>
     </main>
-    <footer className="landing-footer"><div className="footer-top"><a href="/" className="brand-word"><PixelMark/>mimas.</a><p>Технологии, которые помогают<br/>увидеть человека.</p><nav aria-label="Навигация в подвале"><a href="#how">Процесс</a><a href="#evidence">Результат</a><a href="#integrity">Прокторинг</a></nav><button className="footer-enter" onClick={onCompany}>В кабинет <ArrowUpRight size={18}/></button></div><div className="footer-bottom"><span>© 2026 mimas</span><span>НАВЫКИ. КОНТЕКСТ. ДОВЕРИЕ.</span><span>ПРОТОТИП</span></div></footer>
-    {preview && <div className="preview-overlay" role="dialog" aria-modal="true" aria-labelledby="preview-title" onKeyDown={e => {if(e.key === 'Escape') setPreview(false); if(e.key === 'Tab'){const focusable=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),a[href]'));const first=focusable[0],last=focusable[focusable.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}}}><div className="preview-window"><header><span className="small-kicker" id="preview-title">ПРОСМОТР ИНТЕРВЬЮ</span><button autoFocus className="icon-button" aria-label="Закрыть просмотр" onClick={() => setPreview(false)}><X/></button></header><div className="preview-banner">Образец голосового диалога · камера и микрофон выключены · ответы не сохраняются</div><div className="preview-body"><div className="preview-question"><span className="badge purple">Python Backend · вопрос {step+1} из 3</span><h2>{questions[step]}</h2><div className="preview-sample" aria-live="polite"><span>ПРИМЕР УСТНОГО ОТВЕТА</span><p>{sampleReplies[step]}</p></div><button className="primary" onClick={()=>{setState('speaking');setStep(v=>(v+1)%questions.length);}}>Следующий вопрос <ArrowRight size={17}/></button></div><aside className="preview-agent"><GlassOrb state={state}/><strong aria-live="polite">{stateNames[state]}</strong><p>Попробуйте состояния AI-объекта</p><div className="orb-controls">{(['idle','speaking','listening','thinking'] as OrbState[]).map(s=><button key={s} aria-pressed={state===s} onClick={()=>setState(s)}>{s==='idle'?'Ожидание':s==='speaking'?'Говорит':s==='listening'?'Слушает':'Думает'}</button>)}</div><div className="preview-camera"><Video size={22}/><span>Камера не используется в просмотре</span></div></aside></div></div></div>}
+    <footer className="landing-footer">
+      <div className="footer-top">
+        <a href="/" className="brand-word"><PixelMark/>mimas.</a>
+        <p>Голосовой разговор о профессии.<br/>Решение остаётся за человеком.</p>
+        <nav aria-label="Навигация в подвале"><a href="#how">Процесс</a><a href="#evidence">Отчёт</a><a href="#integrity">Правила</a></nav>
+        <button className="footer-enter" onClick={onCompany}>Для компании <ArrowUpRight size={18}/></button>
+      </div>
+      <div className="footer-bottom"><span>© 2026 mimas</span><span>ПРОФЕССИЯ. КОНТЕКСТ. ДОВЕРИЕ.</span><span>ПРОТОТИП</span></div>
+    </footer>
   </div>;
 }
 
 function PixelMark({variant = 'diamond'}: {variant?: 'diamond' | 'cross' | 'steps'}) {
-  return <span className={`pixel-mark pixel-${variant}`} aria-hidden="true">{Array.from({length:9}, (_,i) => <i key={i}/>)}</span>;
+  return <span className={'pixel-mark pixel-' + variant} aria-hidden="true">{Array.from({length: 9}, (_, i) => <i key={i}/>)}</span>;
 }

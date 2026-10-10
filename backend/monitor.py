@@ -1,4 +1,4 @@
-"""Opt-in staging monitor: reports observed helpers, never judges a candidate."""
+"""Opt-in browser monitor: reports observations, never judges a candidate."""
 import hashlib
 import json
 import os
@@ -25,11 +25,16 @@ DETAIL_TTL = 30 * 86400
 PRODUCT_KINDS = {'domain', 'executable', 'window_title', 'publisher'}
 OBSERVATION_KINDS = {'running_process', 'foreground_window', 'topmost_overlay',
                      'background_tab', 'active_tab'}
+# Keep the helper in reads so observations from earlier interviews remain visible.
+# New pairing is limited to the optional browser extension.
 COMPONENTS = ('helper', 'extension')
+PAIRABLE_COMPONENTS = ('extension',)
 
 
 def enabled() -> bool:
-    return (os.getenv('MIMAS_ENV', '').lower() == 'staging' and
+    # Explicitly opt in on each service. The main demo link uses the same
+    # test database during the defence, so it must support the browser monitor.
+    return (os.getenv('MIMAS_ENV', '').lower() in ('staging', 'production') and
             os.getenv('MIMAS_MONITOR_ENABLED', '').lower() in ('1', 'true', 'yes'))
 
 
@@ -127,7 +132,7 @@ class PairRequest(BaseModel):
     @field_validator('component')
     @classmethod
     def component_choice(cls, value):
-        if value not in COMPONENTS:
+        if value not in PAIRABLE_COMPONENTS:
             raise ValueError('Unknown component')
         return value
 
@@ -238,19 +243,13 @@ def _online(row: MonitorClient | None, now: float) -> bool:
 
 
 def assert_start_ready(database: Database, iid: str, user_agent: str = '') -> None:
-    """Called by the existing /start route; no gating outside staging pilot."""
+    """Only explicit consent gates a linked interview; extensions are optional."""
     if not enabled():
         return
     with database.session() as db:
         consent = db.get(MonitorSession, iid)
         if not consent:
             raise HTTPException(409, 'Подтвердите согласие на проверку помощников.')
-        windows = consent.platform == 'windows' or 'Windows' in user_agent
-        if windows:
-            clients = _latest_clients(db, iid)
-            now = time.time()
-            if not all(_online(clients.get(component), now) for component in COMPONENTS):
-                raise HTTPException(409, 'Подключите Windows-помощник и расширение браузера перед интервью.')
 
 
 def _record(db, *, session_id, client_id, event_id, product_id, kind, state, now):
@@ -372,8 +371,7 @@ def register_monitor_routes(app: FastAPI, database: Database) -> None:
                                  'last_seen': clients[kind].last_seen if kind in clients else None}
                           for kind in COMPONENTS}
             observations, summary = _observations(db, iid)
-            ready = bool(consent) and (consent.platform != 'windows' or all(
-                components[kind]['online'] for kind in COMPONENTS))
+            ready = bool(consent)
             return {'enabled': True, 'consented': bool(consent),
                     'platform': consent.platform if consent else None,
                     'start_ready': ready, 'components': components,
@@ -406,8 +404,8 @@ def register_monitor_routes(app: FastAPI, database: Database) -> None:
         with database.session(write=True) as db:
             session = _candidate(db, iid, x_interview_token, active=True)
             consent = db.get(MonitorSession, iid)
-            if not consent or consent.platform != 'windows':
-                raise HTTPException(409, 'Подключение доступно после согласия на Windows.')
+            if not consent:
+                raise HTTPException(409, 'Подключение расширения доступно после согласия.')
             if json.loads(session.state).get('phase') == 'COMPLETED':
                 raise HTTPException(409, 'Интервью уже завершено')
             code = secrets.token_urlsafe(18)

@@ -30,7 +30,7 @@ export async function market<T>(path:string, options:{method?:string;token?:stri
 }
 export const salary=(value:number|null)=>value===null?'не указана':new Intl.NumberFormat('ru-RU').format(value)+' ₽';
 export const salaryRange=(min:number|null,max:number|null)=>min!==null&&max!==null?salary(min)+' — '+salary(max):min!==null?'от '+salary(min):max!==null?'до '+salary(max):'Зарплата не указана';
-export const levelLabels:Record<Level,string>={junior:'Junior',middle:'Middle',senior:'Senior'};
+export const levelLabels:Record<Level,string>={junior:'Начинающий',middle:'С опытом',senior:'Высокий уровень'};
 export const skillNames:Record<string,string>={'python.core':'Python Core','python.oop':'ООП','python.asyncio':'AsyncIO','web.http':'HTTP / REST','db.postgresql':'PostgreSQL','cs.algorithms':'Алгоритмы','engineering.debugging':'Отладка'};
 export function assessmentFor(me:MyProfile|null,id:string):AssessmentView|null {
   if(!me?.assessments)return null;

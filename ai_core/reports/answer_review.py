@@ -10,7 +10,7 @@ RUBRIC = {
         '3 — корректно, но кратко или с пробелами; либо частично верно с глубоким объяснением.',
         '2 — частично верно, объяснение средней глубины.',
         '1 — частично верно, поверхностное объяснение.',
-        '0 — технически неверный ответ с подтверждённой цитатой ошибки.',
+        '0 — неверный ответ с подтверждённой цитатой ошибки.',
         'Не оценено — отказ, ответ не по теме, недостаточно оснований или сбой AI.',
     ],
 }
@@ -29,7 +29,7 @@ def review_answer(turn: Turn) -> dict:
             review['reason'] = 'Ответ сохранён, но не оценён: интервью завершилось до обработки AI.'
         return review
     if result.response_kind != 'substantive' or result.correctness == 'insufficient_evidence':
-        review['reason'] = 'В ответе недостаточно проверяемых технических оснований. Это не ноль баллов.'
+        review['reason'] = 'В ответе недостаточно проверяемых оснований. Это не ноль баллов.'
         return review
     # Legacy sessions may contain unsupported citations: never turn those into points.
     if not result.evidence or any(e.quote not in turn.answer.text for e in result.evidence):
@@ -55,7 +55,7 @@ def review_answer(turn: Turn) -> dict:
         points = {'low': 1, 'medium': 2, 'high': 3}[result.depth]
         reason = 'Ответ частично верный. Балл учитывает глубину объяснения; ошибки и пробелы перечислены ниже.'
     else:
-        points, reason = 0, 'AI отметил техническую ошибку. Основания приведены в цитатах ниже.'
+        points, reason = 0, 'AI отметил ошибку. Основания приведены в цитатах ниже.'
     review.update(points=points, status='assessed', reason=reason, strengths=positive,
                   errors=negative, uncertainties=uncertain, missing_concepts=result.missing_concepts,
                   follow_up_goal=result.follow_up_goal if result.follow_up_required else '')

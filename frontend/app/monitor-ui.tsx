@@ -4,7 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {CheckCircle2,Copy,RefreshCw,ShieldAlert} from 'lucide-react';
 import type {Access} from './ai-session';
 
-type ComponentName='helper'|'extension';
+type ComponentName='extension';
 type MonitorComponent={paired:boolean;online:boolean;last_seen:string|number|null};
 export type MonitorObservation={
   id:string;product_id:string|null;product_name:string|null;kind:string;
@@ -113,7 +113,7 @@ function ConnectionLine({label,component,code,busy,onPair}:{
   </div>;
 }
 export function CandidateMonitorPanel({monitor,phase}:{monitor:CandidateMonitor;phase:string|undefined}){
-  const {status,error,busy,codes,platform,refresh,consent,pair}=monitor;
+  const {status,error,busy,codes,refresh,consent,pair}=monitor;
   const [accepted,setAccepted]=useState(false);
   const [dismissed,setDismissed]=useState<string|null>(null);
   if(!status&&!error)return <p className="tiny muted">Проверяем настройки наблюдения…</p>;
@@ -123,18 +123,16 @@ export function CandidateMonitorPanel({monitor,phase}:{monitor:CandidateMonitor;
   const observations=[...status.observations].sort((a,b)=>timeValue(b.observed_at)-timeValue(a.observed_at));
   const recent=observations.slice(0,3);
   const latestAlert=observations.find(item=>item.state==='detected'&&timeValue(item.observed_at)>Date.now()-120000);
-  const disconnected=platform==='windows'&&status.consented&&phase!=='CREATED'&&phase!=='COMPLETED'&&(!status.components.helper.online||!status.components.extension.online);
+  const disconnected=status.consented&&status.components.extension.paired&&!status.components.extension.online&&phase!=='CREATED'&&phase!=='COMPLETED';
   return <><section className="card monitor-panel" aria-label="Проверка среды интервью">
-    <div className="section-top"><div><span className="eyebrow">ПРОВЕРКА СРЕДЫ</span><h2>{preparing?'Подключите проверку перед первым вопросом':'Наблюдение во время интервью'}</h2></div><ShieldAlert size={22}/></div>
-    <p className="muted">MIMAS проверяет только совпадения с известными помощниками для ответов. Список всех программ, адреса посторонних вкладок, скриншоты и содержимое окон не передаются. Совпадение вызывает предупреждение, не снижает оценку и не означает автоматического отказа.</p>
+    <div className="section-top"><div><span className="eyebrow">ПРОВЕРКА СРЕДЫ</span><h2>{preparing?'Согласие перед интервью':'Наблюдение во время интервью'}</h2></div><ShieldAlert size={22}/></div>
+    <p className="muted">Страница отмечает уход из окна интервью, но не видит названия других программ. Необязательное расширение Chrome/Edge проверяет вкладки с известными помощниками и передаёт только совпадения. Список программ, адреса остальных вкладок, скриншоты и содержимое окон не передаются. Предупреждение не снижает оценку и не означает отказа.</p>
     {!status.consented?<div className="monitor-consent"><label className="market-consent"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> Я согласен(на) на проверку во время интервью и передачу совпадений компании по этой вакансии.</label><button type="button" className="primary" disabled={!accepted||busy} onClick={()=>void consent()}>Подтвердить проверку</button></div>
-      :platform==='windows'?<>
-        <p className="tiny muted">Для внутреннего теста получите архив помощника и папку расширения у команды MIMAS. Запустите Windows-помощник; в Chrome/Edge включите режим разработчика и загрузите распакованное расширение. Для каждого компонента получите отдельный код и вставьте его в соответствующее приложение.</p>
-        <ConnectionLine label="Windows-помощник" component={status.components.helper} code={codes.helper} busy={busy} onPair={()=>void pair('helper')}/>
-        <ConnectionLine label="Расширение Chrome/Edge" component={status.components.extension} code={codes.extension} busy={busy} onPair={()=>void pair('extension')}/>
-        {preparing&&<p role="status" className={status.start_ready?'note':'warning'}>{status.start_ready?'Оба компонента подключены. Можно получать первый вопрос.':'Первый вопрос станет доступен, когда оба компонента подключатся.'}</p>}
-      </>:<p className="note"><CheckCircle2 size={16}/> На этой системе интервью проходит в браузере. MIMAS фиксирует только общие события страницы, например её потерю фокуса; названия программ недоступны.</p>}
-    {disconnected&&<p role="alert" className="warning">Связь с проверкой прервана. Интервью можно продолжать; компания увидит факт отключения. Проверьте Windows-помощник и расширение.</p>}
+      :<><p className="note"><CheckCircle2 size={16}/> Согласие подтверждено. Можно начать интервью без дополнительных программ и расширений.</p>
+        <p className="tiny muted">Если хотите проверить вкладки известных помощников, установите расширение Chrome/Edge из пакета команды MIMAS, выберите адрес интервью и введите одноразовый код. Это необязательно: отсутствие расширения не мешает интервью и не влияет на оценку.</p>
+        <ConnectionLine label="Расширение Chrome/Edge (необязательно)" component={status.components.extension} code={codes.extension} busy={busy} onPair={()=>void pair('extension')}/>
+      </>}
+    {disconnected&&<p role="alert" className="warning">Расширение потеряло связь. Интервью продолжается, оценка не меняется. При желании подключите расширение снова.</p>}
     {recent.length>0&&<div className="monitor-observations"><strong>Наблюдения</strong>{recent.map(item=><p key={item.id} role="alert" className="warning">{observationText(item)} <span className="tiny">{readableTime(item.observed_at)}</span></p>)}<p className="tiny muted">Если совпадение ошибочное, сообщите об этом работодателю. Окончательное решение принимает человек.</p></div>}
     {error&&<p role="alert" className="error-box">{error}</p>}
   </section>{latestAlert&&latestAlert.id!==dismissed&&<div className="monitor-toast" role="alert"><ShieldAlert size={18}/><span>{observationText(latestAlert)} Совпадение не влияет автоматически на оценку.</span><button type="button" aria-label="Закрыть предупреждение" onClick={()=>setDismissed(latestAlert.id)}>×</button></div>}</>;

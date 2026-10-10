@@ -23,7 +23,7 @@ function HighlightedAnswer({text, errors}:{text:string; errors:Finding[]}) {
 export function AnswerReport({reviews,rubric,names}:{reviews:AnswerReview[];rubric?:ScoringRubric;names:Record<string,string>}){
   return <section className="answer-reviews" aria-label="Разбор ответов">
     <h2>Баллы и разбор каждого ответа</h2>
-    <p className="muted">Балл рассчитан по оценке AI. Подсвеченные фрагменты — основания замечаний; неполный ответ и техническая ошибка показаны отдельно.</p>
+    <p className="muted">AI оценивает только содержание устного ответа: профессиональные знания и решения рабочих ситуаций. Подсвеченные фрагменты показывают основания замечаний. Практический навык и допуск к работе здесь не подтверждаются.</p>
     {rubric&&<details className="card scoring-rubric"><summary>Как считаются баллы от 0 до 5</summary><p>{rubric.description}</p><ul>{rubric.rules.map(rule=><li key={rule}>{rule}</li>)}</ul></details>}
     {!reviews.length&&<p className="note">Пока нет сохранённых ответов для разбора.</p>}
     {reviews.map((review,index)=><article className="card answer-review" key={review.question_id}>
@@ -31,7 +31,7 @@ export function AnswerReport({reviews,rubric,names}:{reviews:AnswerReview[];rubr
       <p className="score-reason">{review.reason}</p>
       <h4>Ваш ответ</h4><HighlightedAnswer text={review.answer} errors={review.errors}/>
       <div className="review-findings">
-        <section className="review-errors"><h4>Где ошибка</h4>{review.errors.length?review.errors.map((e,i)=><div className="review-finding" key={i}><blockquote>{e.quote}</blockquote><p>{e.claim}</p></div>):<p className="muted">{review.points===null?'Технические ошибки не установлены: ответ не оценён.':'AI не отметил конкретных технических ошибок.'}</p>}</section>
+        <section className="review-errors"><h4>Где ошибка</h4>{review.errors.length?review.errors.map((e,i)=><div className="review-finding" key={i}><blockquote>{e.quote}</blockquote><p>{e.claim}</p></div>):<p className="muted">{review.points===null?'Ответ не оценён; подтверждённых ошибок в объяснении нет.':'AI не отметил конкретных ошибок в объяснении.'}</p>}</section>
         <section className="review-strengths"><h4>Что засчитано</h4>{review.strengths.length?review.strengths.map((e,i)=><div className="review-finding" key={i}><p>{e.claim}</p><blockquote>{e.quote}</blockquote></div>):<p className="muted">Нет подтверждённых пунктов.</p>}</section>
       </div>
       {(review.missing_concepts.length>0||review.uncertainties.length>0||review.follow_up_goal)&&<section className="review-improvements"><h4>Что дополнить или уточнить</h4>{review.missing_concepts.length>0&&<ul>{review.missing_concepts.map((item,i)=><li key={i}>{item}</li>)}</ul>}{review.uncertainties.map((e,i)=><p key={i}>{e.claim} <q>{e.quote}</q></p>)}{review.follow_up_goal&&<p>{review.follow_up_goal}</p>}</section>}

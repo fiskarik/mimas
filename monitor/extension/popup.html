@@ -8,9 +8,14 @@
 </head>
 <body>
   <main>
-    <header><span class="mark">●</span><strong>MIMAS Monitor</strong><small>STAGING</small></header>
+    <header><span class="mark">●</span><strong>MIMAS Monitor</strong></header>
     <p>Во время интервью расширение проверяет открытые вкладки известных помощников для ответов. На сервер передаются только совпадение и его тип. Адреса остальных вкладок не передаются.</p>
     <form id="pair-form">
+      <label for="base">Адрес интервью</label>
+      <select id="base" name="base">
+        <option value="https://mimas.onrender.com">Основная ссылка MIMAS</option>
+        <option value="https://mimas-staging.onrender.com">Тестовая ссылка MIMAS</option>
+      </select>
       <label for="code">Одноразовый код расширения из MIMAS</label>
       <input id="code" name="code" autocomplete="off" spellcheck="false" required>
       <button type="submit" id="connect">Подключить</button>

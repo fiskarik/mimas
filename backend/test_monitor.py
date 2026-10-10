@@ -92,7 +92,8 @@ def pair(client, component):
     return {'X-Monitor-Token': claimed.json()['token']}
 
 
-def test_pairing_start_gate_and_tenant_isolation(setup_monitor):
+@pytest.mark.parametrize('platform', ['windows', 'other'])
+def test_consent_starts_without_components_and_tenant_isolation(setup_monitor, platform):
     client, database = setup_monitor
     assert client.get('/api/ai/sessions/session/monitor/status').status_code == 401
     status = client.get('/api/ai/sessions/session/monitor/status', headers=candidate()).json()
@@ -101,30 +102,39 @@ def test_pairing_start_gate_and_tenant_isolation(setup_monitor):
         assert_start_ready(database, 'session', 'Windows Chrome')
     assert blocked.value.status_code == 409
     assert client.post('/api/ai/sessions/session/monitor/consent', headers=candidate(),
-                       json={'accepted': True, 'platform': 'windows'}).status_code == 200
-    helper = pair(client, 'helper')
-    extension = pair(client, 'extension')
-    assert client.get('/api/monitor/catalog', headers=helper).json()['products'][0]['domains'] == ['known.example']
-    assert client.post('/api/monitor/heartbeat', headers=helper).status_code == 200
-    assert client.post('/api/monitor/heartbeat', headers=extension).status_code == 200
+                       json={'accepted': True, 'platform': platform}).status_code == 200
     assert_start_ready(database, 'session', 'Windows Chrome')
     status = client.get('/api/ai/sessions/session/monitor/status', headers=candidate()).json()
-    assert status['start_ready'] and status['components']['helper']['online']
+    assert status['start_ready'] and not status['components']['extension']['online']
+    assert not status['components']['helper']['online']
     assert client.get('/api/market/company/assessments/session/monitor',
                       headers={'X-Company-Key': 'second-key'}).status_code == 404
     assert client.get('/api/market/company/assessments/session/monitor',
                       headers={'X-Company-Key': 'first-key'}).status_code == 200
 
 
+def test_optional_extension_can_pair_after_consent_on_any_platform(setup_monitor):
+    client, database = setup_monitor
+    assert client.post('/api/ai/sessions/session/monitor/pair', headers=candidate(),
+                       json={'component': 'extension'}).status_code == 409
+    assert client.post('/api/ai/sessions/session/monitor/consent', headers=candidate(),
+                       json={'accepted': True, 'platform': 'other'}).status_code == 200
+    extension = pair(client, 'extension')
+    assert client.get('/api/monitor/catalog', headers=extension).json()['products'][0]['domains'] == ['known.example']
+    assert client.post('/api/monitor/heartbeat', headers=extension).status_code == 200
+    assert_start_ready(database, 'session')
+    assert client.get('/api/ai/sessions/session/monitor/status', headers=candidate()).json()['components']['extension']['online']
+
+
 def test_observation_dedup_source_and_retention(setup_monitor):
     client, database = setup_monitor
     client.post('/api/ai/sessions/session/monitor/consent', headers=candidate(),
                 json={'accepted': True, 'platform': 'windows'})
-    helper = pair(client, 'helper')
     extension = pair(client, 'extension')
     base = {'event_id': 'first-event', 'product_id': 'known',
             'kind': 'background_tab', 'state': 'detected'}
-    assert client.post('/api/monitor/observations', headers=helper, json=base).status_code == 422
+    assert client.post('/api/monitor/observations', headers=extension,
+                       json={**base, 'kind': 'running_process'}).status_code == 422
     first = client.post('/api/monitor/observations', headers=extension, json=base)
     assert first.status_code == 200 and first.json()['accepted']
     duplicate = client.post('/api/monitor/observations', headers=extension, json=base).json()
@@ -148,23 +158,23 @@ def test_observation_dedup_source_and_retention(setup_monitor):
         assert db.query(MonitorSummary).one().detected_count == 1
 
 
-def test_disconnect_warns_without_ending_interview(setup_monitor):
+def test_optional_extension_disconnect_warns_without_ending_interview(setup_monitor):
     client, database = setup_monitor
     client.post('/api/ai/sessions/session/monitor/consent', headers=candidate(),
                 json={'accepted': True, 'platform': 'windows'})
-    helper = pair(client, 'helper')
-    pair(client, 'extension')
+    extension = pair(client, 'extension')
     with database.session(write=True) as db:
         db.get(AISession, 'session').state = json.dumps({'phase': 'WAITING_FOR_ANSWER'})
-    assert client.post('/api/monitor/disconnect', headers=helper).status_code == 200
+    assert client.post('/api/monitor/disconnect', headers=extension).status_code == 200
     status = client.get('/api/ai/sessions/session/monitor/status', headers=candidate()).json()
-    assert not status['components']['helper']['online']
-    assert any(item['kind'] == 'agent_offline' for item in status['observations'])
+    assert status['start_ready'] and not status['components']['extension']['online']
+    assert any(item['kind'] == 'extension_offline' for item in status['observations'])
+    assert_start_ready(database, 'session', 'Windows Chrome')
     assert client.get('/api/market/company/assessments/session/monitor',
                       headers={'X-Company-Key': 'first-key'}).status_code == 200
 
 
-def test_admin_only_verified_signatures_and_staging_flag(setup_monitor, monkeypatch):
+def test_admin_only_verified_signatures_and_explicit_flag(setup_monitor, monkeypatch):
     client, _ = setup_monitor
     base = '/api/monitor/admin/products'
     assert client.get(base).status_code == 401
@@ -181,22 +191,39 @@ def test_admin_only_verified_signatures_and_staging_flag(setup_monitor, monkeypa
         'verified_installation': True})
     assert signature.status_code == 200
     monkeypatch.setenv('MIMAS_ENV', 'production')
+    assert client.get(base, headers=admin).status_code == 200
+    assert client.get('/api/ai/sessions/session/monitor/status', headers=candidate()).json()['enabled'] is True
+    monkeypatch.setenv('MIMAS_MONITOR_ENABLED', '0')
     assert client.get(base, headers=admin).status_code == 404
     assert client.get('/api/ai/sessions/session/monitor/status', headers=candidate()).json()['enabled'] is False
 
 
-def test_expired_and_wrong_component_codes_are_rejected(setup_monitor):
+def test_helper_pairing_disabled_and_expired_extension_codes_rejected(setup_monitor):
     client, database = setup_monitor
     client.post('/api/ai/sessions/session/monitor/consent', headers=candidate(),
                 json={'accepted': True, 'platform': 'windows'})
+    assert client.post('/api/ai/sessions/session/monitor/pair', headers=candidate(),
+                       json={'component': 'helper'}).status_code == 422
     issue = client.post('/api/ai/sessions/session/monitor/pair', headers=candidate(),
-                        json={'component': 'helper'})
+                        json={'component': 'extension'})
     assert issue.status_code == 200
     code = issue.json()['code']
     assert client.post('/api/monitor/claim',
-                       json={'code': code, 'component': 'extension'}).status_code == 401
+                       json={'code': code, 'component': 'helper'}).status_code == 422
     from backend.monitor import MonitorPairCode
     with database.session(write=True) as db:
         db.get(MonitorPairCode, digest(code)).expires_at = time.time() - 1
     assert client.post('/api/monitor/claim',
-                       json={'code': code, 'component': 'helper'}).status_code == 401
+                       json={'code': code, 'component': 'extension'}).status_code == 401
+
+
+def test_historical_helper_observations_remain_in_report(setup_monitor):
+    client, database = setup_monitor
+    with database.session(write=True) as db:
+        db.add(MonitorObservation(id='old-helper-event', session_id='session', client_id=None,
+                                  event_id='historic', product_id='known',
+                                  kind='running_process', state='detected', observed_at=time.time()))
+    report = client.get('/api/market/company/assessments/session/monitor',
+                        headers={'X-Company-Key': 'first-key'}).json()
+    assert report['automatic_penalty'] is False
+    assert report['observations'][0]['kind'] == 'running_process'

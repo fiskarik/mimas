@@ -53,14 +53,24 @@ export function useIntegrityEvents(
     }
   }, [access, questionId, busy, pending, flushEvents, onError]);
 
+  const pageFocused = useRef(true);
   useEffect(() => {
-    const blur = () => track('FOCUS_LOST');
-    const focus = () => track('FOCUS_RETURNED');
-    window.addEventListener('blur', blur);
-    window.addEventListener('focus', focus);
+    // A hidden tab and a blurred window can fire together. Record one
+    // transition, without claiming to know which other app or tab is active.
+    pageFocused.current = document.visibilityState === 'visible' && document.hasFocus();
+    const observe = () => {
+      const focused = document.visibilityState === 'visible' && document.hasFocus();
+      if (focused === pageFocused.current) return;
+      pageFocused.current = focused;
+      track(focused ? 'FOCUS_RETURNED' : 'FOCUS_LOST');
+    };
+    window.addEventListener('blur', observe);
+    window.addEventListener('focus', observe);
+    document.addEventListener('visibilitychange', observe);
     return () => {
-      window.removeEventListener('blur', blur);
-      window.removeEventListener('focus', focus);
+      window.removeEventListener('blur', observe);
+      window.removeEventListener('focus', observe);
+      document.removeEventListener('visibilitychange', observe);
     };
   }, [track]);
   return {flushEvents, track};

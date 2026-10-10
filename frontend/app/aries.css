@@ -265,3 +265,17 @@ input:focus, textarea:focus { outline-color: #83ad92; }
 @media (prefers-reduced-motion: reduce) {
   .journey-grid article:hover, .landing .primary:hover:not(:disabled) { transform: none; }
 }
+/* Restored video hero and professional-situation illustration. */
+.hero-bottom > p { max-width: 670px; }
+.hero-process { display: flex; align-items: center; justify-content: center; gap: 12px; color: #e7f2e0; font: 10px/1.4 Consolas, monospace; letter-spacing: .06em; text-align: center; }
+.hero-process span { color: var(--mint); }
+.scenario-fragment { width: min(100%, 250px); display: grid; gap: 7px; border: 1px solid #d5dfcb; border-radius: 8px; padding: 16px; background: #f9fbf2; box-shadow: 0 9px 25px #1c3d2610; transform: rotate(-3deg); color: #52634c; }
+.scenario-fragment span { color: #3b7850; font: 9px/1.4 Consolas, monospace; text-transform: uppercase; letter-spacing: .1em; }
+.scenario-fragment strong { font-size: 12px; font-weight: 500; line-height: 1.4; }
+.scenario-fragment small { font-size: 10px; color: #70806b; }
+@media (max-width: 760px) {
+  .hero-process { justify-content: flex-start; font-size: 9px; gap: 7px; }
+}
+@media (max-width: 370px) {
+  .hero-process { font-size: 8px; gap: 4px; }
+}

@@ -1,6 +1,11 @@
 import {observationsForTabs, transitions} from './matcher.js';
 
-const BASE = 'https://mimas-staging.onrender.com';
+const BASES = new Set(['https://mimas-staging.onrender.com', 'https://mimas.onrender.com']);
+const DEFAULT_BASE = 'https://mimas-staging.onrender.com';
+function checkedBase(base) {
+  if (!BASES.has(base)) throw new Error('Выберите адрес интервью MIMAS.');
+  return base;
+}
 const STATE_KEY = 'mimasMonitor';
 const ALARM = 'mimas-monitor-check';
 let serial = Promise.resolve();
@@ -19,8 +24,8 @@ async function writeState(state) {
   await chrome.storage.session.set({[STATE_KEY]: state});
 }
 
-async function request(path, method = 'GET', body, token) {
-  const response = await fetch(`${BASE}${path}`, {
+async function request(path, method = 'GET', body, token, base = DEFAULT_BASE) {
+  const response = await fetch(`${checkedBase(base)}${path}`, {
     method,
     headers: {
       ...(body === undefined ? {} : {'Content-Type': 'application/json'}),
@@ -49,11 +54,11 @@ async function cycle() {
   try {
     const now = Date.now();
     if (!state.catalog || now - (state.catalogFetchedAt || 0) > 5 * 60_000) {
-      state.catalog = await request('/api/monitor/catalog', 'GET', undefined, state.token);
+      state.catalog = await request('/api/monitor/catalog', 'GET', undefined, state.token, state.base);
       state.catalogFetchedAt = now;
     }
     if (now - (state.lastHeartbeatAt || 0) > 20_000) {
-      await request('/api/monitor/heartbeat', 'POST', {}, state.token);
+      await request('/api/monitor/heartbeat', 'POST', {}, state.token, state.base);
       state.lastHeartbeatAt = now;
     }
 
@@ -73,7 +78,7 @@ async function cycle() {
     }
     await writeState(state); // Survive service-worker suspension before the upload.
     while (state.pending.length) {
-      await request('/api/monitor/observations', 'POST', state.pending[0], state.token);
+      await request('/api/monitor/observations', 'POST', state.pending[0], state.token, state.base);
       state.pending.shift();
       await writeState(state);
     }
@@ -91,11 +96,13 @@ async function cycle() {
   }
 }
 
-async function connect(code) {
-  const claim = await request('/api/monitor/claim', 'POST', {code: code.trim(), component: 'extension'});
+async function connect(code, base) {
+  checkedBase(base);
+  const claim = await request('/api/monitor/claim', 'POST', {code: code.trim(), component: 'extension'}, undefined, base);
   if (!claim?.token || !claim?.session_id) throw new Error('Сервер не вернул данные подключения.');
   const state = {
     token: claim.token,
+    base,
     sessionId: claim.session_id,
     expiresAt: claim.expires_at,
     catalog: null,
@@ -115,6 +122,7 @@ async function status() {
   const state = await readState();
   return {
     connected: Boolean(state?.token),
+    base: state?.base || null,
     sessionId: state?.sessionId || null,
     lastError: state?.lastError || '',
     catalogCount: state?.catalog?.products?.length || 0,
@@ -124,12 +132,12 @@ async function status() {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const operation = queue(async () => {
-    if (message?.action === 'connect') return connect(String(message.code || ''));
+    if (message?.action === 'connect') return connect(String(message.code || ''), String(message.base || ''));
     if (message?.action === 'disconnect') {
       const state = await readState();
       let warning = '';
       if (state?.token) {
-        try { await request('/api/monitor/disconnect', 'POST', {}, state.token); }
+        try { await request('/api/monitor/disconnect', 'POST', {}, state.token, state.base); }
         catch { warning = 'Проверка остановлена здесь. Если сеть недоступна, сервер обновит статус после тайм-аута.'; }
       }
       await chrome.storage.session.remove(STATE_KEY);
