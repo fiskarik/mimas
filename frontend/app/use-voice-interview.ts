@@ -64,6 +64,9 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
   const answerFlushTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const graphReady=useRef(false);
   const answerAllowed=useRef(false);
+  const reconnectTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const reconnectAttempts=useRef(0);
+  const resumeConnection=useRef<((access:Access,stream:MediaStream,resume:boolean)=>Promise<void>)|null>(null);
 
   const stopPlayback=useCallback(()=>{
     if(listenTimer.current){clearTimeout(listenTimer.current);listenTimer.current=null;}
@@ -79,6 +82,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
     if(context&&context.state!=='closed')void context.close();
   },[stopPlayback]);
   const disconnect=useCallback(()=>{
+    if(reconnectTimer.current){clearTimeout(reconnectTimer.current);reconnectTimer.current=null;}
     closed.current=true;generation.current++;sendingAudio.current=false;answerPending.current=false;holdingAnswer.current=false;answerFlushPending.current=false;graphReady.current=false;answerAllowed.current=false;
     const current=socket.current;socket.current=null;
     if(current?.readyState===WebSocket.OPEN)current.send(JSON.stringify({type:'stop'}));
@@ -102,12 +106,15 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
     else {answerPending.current=false;setPhase('disconnected');}
   },[]);
 
-  const connect=useCallback(async(access:Access,stream:MediaStream)=>{
+  const connect=useCallback(async(access:Access,stream:MediaStream,resume=false)=>{
     if(!stream.getAudioTracks().some(track=>track.readyState==='live')){
       setError('Микрофон недоступен. Разрешите доступ к нему в браузере и повторите подключение.');
       return;
     }
-    if(socket.current)disconnect();closed.current=false;finished.current=false;awaitingPlayback.current=false;interrupted.current=false;sendingAudio.current=false;answerPending.current=false;holdingAnswer.current=false;answerFlushPending.current=false;graphReady.current=false;answerAllowed.current=false;setError('');setLines([]);setPhase('connecting');
+    if(reconnectTimer.current){clearTimeout(reconnectTimer.current);reconnectTimer.current=null;}
+    if(socket.current)disconnect();
+    if(!resume)reconnectAttempts.current=0;
+    closed.current=false;finished.current=false;awaitingPlayback.current=false;interrupted.current=false;sendingAudio.current=false;answerPending.current=false;holdingAnswer.current=false;answerFlushPending.current=false;graphReady.current=false;answerAllowed.current=false;setError('');if(!resume)setLines([]);setPhase('connecting');
     prepare();
     const protocol=window.location.protocol==='https:'?'wss:':'ws:';
     const url=protocol+'//'+window.location.host+'/api/ai/sessions/'+encodeURIComponent(access.id)+'/voice';
@@ -115,10 +122,27 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
     const epoch=++generation.current;
     current.onopen=()=>current.send(JSON.stringify({type:'auth',token:access.token}));
     current.onerror=()=>{if(epoch===generation.current)setError('Не удалось установить голосовое соединение. Проверьте сеть и подключитесь снова.');};
-    current.onclose=()=>{
+    current.onclose=(closeEvent)=>{
       if(epoch!==generation.current||closed.current)return;
+      const answerInterrupted=holdingAnswer.current||answerPending.current;
       socket.current=null;stopGraph();
-      setPhase(previous=>previous==='completed'?'completed':'disconnected');
+      if(finished.current){setPhase('completed');return;}
+      if(closeEvent.code!==4401&&reconnectAttempts.current<3&&stream.getAudioTracks().some(track=>track.readyState==='live')){
+        const attempt=++reconnectAttempts.current;
+        setError(answerInterrupted
+          ?'Связь прервалась во время ответа. После подключения повторите ответ целиком.'
+          :'Голосовой сервис прервал связь. Подключаемся снова…');
+        setPhase('connecting');
+        reconnectTimer.current=setTimeout(()=>{
+          reconnectTimer.current=null;
+          if(!closed.current&&epoch===generation.current)void resumeConnection.current?.(access,stream,true);
+        },Math.min(5000,attempt*1500));
+        return;
+      }
+      setError(answerInterrupted
+        ?'Связь прервалась во время ответа. Нажмите «Подключиться» и повторите ответ целиком.'
+        :'Голосовой сервис сейчас недоступен. Нажмите «Подключиться», чтобы попробовать снова.');
+      setPhase('disconnected');
     };
     current.onmessage=(event:MessageEvent<string>)=>{
       let message:Message;try{message=JSON.parse(event.data) as Message;}catch{return;}
@@ -181,7 +205,8 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       }
       if(message.type==='transcript'&&message.text&&(message.speaker==='candidate'||message.speaker==='mimas')){
         const speaker=message.speaker;
-        setLines(previous=>[...previous,{speaker,text:message.text!,id:++sequence.current}]);
+        setLines(previous=>previous.at(-1)?.speaker===speaker&&previous.at(-1)?.text===message.text
+          ?previous:[...previous,{speaker,text:message.text!,id:++sequence.current}]);
         if(speaker==='candidate'){answerAllowed.current=false;holdingAnswer.current=false;sendingAudio.current=false;setPhase('thinking');}
         else awaitingPlayback.current=true;
         return;
@@ -199,6 +224,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       }
       if(message.type==='speech_stopped'){
         if(finished.current)return;
+        reconnectAttempts.current=0;
         if(answerPending.current||holdingAnswer.current)return;
         if(interrupted.current){interrupted.current=false;if(graphReady.current&&answerAllowed.current)setPhase('listening');return;}
         if(!awaitingPlayback.current){if(graphReady.current&&answerAllowed.current)setPhase('listening');return;}
@@ -231,6 +257,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
       }
     };
   },[completeAnswer,disconnect,prepare,stopGraph]);
+  resumeConnection.current=connect;
 
   const toggleMute=useCallback(()=>setMuted(previous=>{
     mutedRef.current=!previous;return !previous;

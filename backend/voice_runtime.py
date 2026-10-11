@@ -9,11 +9,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+from contextlib import AsyncExitStack
 from decimal import Decimal
 import json
 import logging
 import os
+import re
 import time
+from uuid import uuid4
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -59,6 +62,61 @@ STT_INSTRUCTIONS = (
 
 class VoiceProtocolError(Exception):
     pass
+
+
+def _provider_error_code(event: dict) -> str:
+    """Keep diagnostics useful without logging transcripts or provider payloads."""
+    error = event.get('error')
+    if not isinstance(error, dict):
+        return 'unknown'
+    value = str(error.get('code') or error.get('type') or 'unknown')
+    return value if re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', value) else 'other'
+
+
+def _provider_close_reason(exc: ConnectionClosed) -> str:
+    value = str(getattr(getattr(exc, 'rcvd', None), 'reason', ''))
+    return value if re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', value) else 'other'
+
+
+async def _open_yandex_channel(stack: AsyncExitStack, url: str, headers: dict,
+                               *, transcribe: bool, max_size: int):
+    """Do not announce readiness until Yandex accepts the session settings."""
+    channel = 'stt' if transcribe else 'tts'
+    for attempt in range(2):
+        context = connect(url, additional_headers=headers, ping_interval=20,
+                          open_timeout=15, max_size=max_size)
+        stream = None
+        try:
+            stream = await context.__aenter__()
+            await stream.send(json.dumps(_session_update(transcribe=transcribe),
+                                         ensure_ascii=False))
+            for _ in range(5):
+                packet = await asyncio.wait_for(stream.recv(), timeout=10)
+                event = json.loads(packet)
+                if event.get('type') == 'session.updated':
+                    stack.push_async_exit(context.__aexit__)
+                    return stream
+                if event.get('type') == 'error':
+                    raise VoiceProtocolError(
+                        'Не удалось настроить голосовой сервис ('
+                        + _provider_error_code(event) + ').')
+            raise VoiceProtocolError('Голосовой сервис не подтвердил подключение.')
+        except (ConnectionClosed, TimeoutError, OSError) as exc:
+            LOGGER.warning('Yandex voice %s connection failed: %s code=%s reason=%s',
+                           channel, type(exc).__name__,
+                           getattr(getattr(exc, 'rcvd', None), 'code', None),
+                           _provider_close_reason(exc) if isinstance(exc, ConnectionClosed)
+                           else 'none')
+            if stream is not None:
+                await context.__aexit__(None, None, None)
+            if attempt:
+                raise VoiceProtocolError(
+                    'Голосовой сервис временно недоступен. Подключитесь повторно.') from exc
+            await asyncio.sleep(1)
+        except Exception:
+            if stream is not None:
+                await context.__aexit__(None, None, None)
+            raise
 
 
 class VoiceSpend:
@@ -299,12 +357,13 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
         headers = {'Authorization': f'Api-Key {api_key}'}
 
         try:
-            async with (
-                connect(upstream_url, additional_headers=headers, ping_interval=20,
-                        open_timeout=15, max_size=2 * 1024 * 1024) as stt,
-                connect(upstream_url, additional_headers=headers, ping_interval=20,
-                        open_timeout=15, max_size=12 * 1024 * 1024) as tts,
-            ):
+            async with AsyncExitStack() as upstream_stack:
+                stt = await _open_yandex_channel(
+                    upstream_stack, upstream_url, headers,
+                    transcribe=True, max_size=2 * 1024 * 1024)
+                tts = await _open_yandex_channel(
+                    upstream_stack, upstream_url, headers,
+                    transcribe=False, max_size=12 * 1024 * 1024)
                 connected = True
                 stt_send_lock = asyncio.Lock()
                 tts_send_lock = asyncio.Lock()
@@ -315,6 +374,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                 seen_items: set[str] = set()
                 stt_context_items: set[str] = set()
                 deleted_stt_items: set[str] = set()
+                stt_maintenance_events: set[str] = set()
                 utterance_questions: dict[str, str] = {}
                 spoken_question: str | None = None
                 stt_events: asyncio.Queue[dict] = asyncio.Queue()
@@ -358,7 +418,10 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         return
                     deleted_stt_items.add(item_id)
                     stt_context_items.discard(item_id)
-                    await stt_send({'type': 'conversation.item.delete', 'item_id': item_id})
+                    event_id = 'mimas-delete-' + uuid4().hex
+                    stt_maintenance_events.add(event_id)
+                    await stt_send({'type': 'conversation.item.delete',
+                                    'event_id': event_id, 'item_id': item_id})
 
                 async def tts_send(payload: dict):
                     async with tts_send_lock:
@@ -385,8 +448,6 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                     await tts_send(_question_prompt(question.text))
                     await tts_send({'type': 'response.create'})
 
-                await stt_send(_session_update(transcribe=True))
-                await tts_send(_session_update(transcribe=False))
                 await send({'type': 'ready', 'sample_rate': SAMPLE_RATE})
                 await send({'type': 'state', 'session': public_view(row)})
                 await speak(current_question)
@@ -490,7 +551,13 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         elif kind == 'response.created':
                             # The transcription socket never supplies questions
                             # or assessments, even if a response is generated.
-                            await stt_send({'type': 'response.cancel'})
+                            event_id = 'mimas-cancel-' + uuid4().hex
+                            stt_maintenance_events.add(event_id)
+                            response_id = (event.get('response') or {}).get('id')
+                            payload = {'type': 'response.cancel', 'event_id': event_id}
+                            if isinstance(response_id, str):
+                                payload['response_id'] = response_id
+                            await stt_send(payload)
                         elif kind == 'response.done':
                             await spend.usage(event.get('response') or {})
                         elif kind == 'conversation.item.input_audio_transcription.completed':
@@ -544,6 +611,15 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                     and finish_requested_at):
                                 raise VoiceProtocolError('Распознавание задержалось. Подключитесь заново и повторите ответ.')
                         elif kind == 'error':
+                            error = event.get('error') or {}
+                            origin = error.get('event_id') if isinstance(error, dict) else None
+                            if isinstance(origin, str) and origin in stt_maintenance_events:
+                                stt_maintenance_events.discard(origin)
+                                LOGGER.info('Yandex ignored nonessential STT maintenance: code=%s',
+                                            _provider_error_code(event))
+                                continue
+                            LOGGER.warning('Yandex voice stt error: code=%s',
+                                           _provider_error_code(event))
                             raise VoiceProtocolError('Распознавание речи временно недоступно.')
 
                 async def receive_tts():
@@ -571,6 +647,8 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             if status in ('failed', 'incomplete'):
                                 raise VoiceProtocolError('Не удалось озвучить вопрос. Подключитесь заново.')
                         elif kind == 'error':
+                            LOGGER.warning('Yandex voice tts error: code=%s',
+                                           _provider_error_code(event))
                             raise VoiceProtocolError('Озвучивание временно недоступно.')
                     raise VoiceProtocolError('Соединение с озвучиванием прервалось.')
 
@@ -604,8 +682,18 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         if not task.done():
                             task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
-        except (WebSocketDisconnect, ConnectionClosed):
+        except WebSocketDisconnect:
             pass
+        except ConnectionClosed as exc:
+            failed = True
+            LOGGER.warning('Yandex voice stream closed: code=%s reason=%s',
+                           getattr(getattr(exc, 'rcvd', None), 'code', None),
+                           _provider_close_reason(exc))
+            try:
+                await send({'type': 'error', 'message':
+                            'Голосовой сервис прервал соединение. Пробуем подключиться снова.'})
+            except (RuntimeError, WebSocketDisconnect):
+                pass
         except (VoiceProtocolError, BudgetExceeded) as exc:
             failed = True
             message = 'Месячный лимит AI исчерпан.' if isinstance(exc, BudgetExceeded) else str(exc)

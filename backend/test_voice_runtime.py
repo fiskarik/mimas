@@ -1,5 +1,6 @@
 """Realtime bridge tests use fake Yandex sockets; no paid calls or PostgreSQL."""
 import asyncio
+from contextlib import AsyncExitStack
 import base64
 import json
 from types import SimpleNamespace
@@ -36,7 +37,7 @@ class FakeUpstream:
     def __init__(self, kind, questions, transcript='Мой голосовой ответ.',
                  transcription_delay=0, fail_transcription=False,
                  drop_transcription=False, unregistered_transcript=None,
-                 null_committed_item_id=False):
+                 null_committed_item_id=False, cancel_error=False):
         self.kind = kind
         self.questions = questions
         self.transcript = transcript
@@ -45,6 +46,7 @@ class FakeUpstream:
         self.drop_transcription = drop_transcription
         self.unregistered_transcript = unregistered_transcript
         self.null_committed_item_id = null_committed_item_id
+        self.cancel_error = cancel_error
         self.pending_transcription_item_id = None
         self.queue = asyncio.Queue()
         self.sent = []
@@ -65,6 +67,9 @@ class FakeUpstream:
     def __aiter__(self):
         return self
 
+    async def recv(self):
+        return await self.__anext__()
+
     async def __anext__(self):
         value = await self.queue.get()
         if value is None:
@@ -74,7 +79,10 @@ class FakeUpstream:
     async def send(self, payload):
         event = json.loads(payload)
         self.sent.append(event)
-        if self.kind == 'tts' and event['type'] == 'response.create':
+        if event['type'] == 'session.update':
+            await self.queue.put({'type': 'session.updated',
+                                  'session': event['session']})
+        elif self.kind == 'tts' and event['type'] == 'response.create':
             question = self.questions[self.response_number]
             self.response_number += 1
             samples = voice.SAMPLE_RATE * 3 if self.response_number == 1 else 100
@@ -86,6 +94,11 @@ class FakeUpstream:
                                   'response': {'status': 'completed', 'usage': {
                                       'input_token_details': {'text_tokens': 30},
                                       'output_token_details': {'text_tokens': 20}}}})
+        elif self.kind == 'stt' and event['type'] == 'response.cancel' and self.cancel_error:
+            await self.queue.put({'type': 'error', 'error': {
+                'code': 'response_cancel_not_active',
+                'event_id': event['event_id'],
+                'message': 'Response already finished'}})
         elif self.kind == 'stt' and event['type'] == 'input_audio_buffer.append':
             self.audio_chunks += 1
             if self.unregistered_transcript:
@@ -139,7 +152,7 @@ def _fake_state(question, pending=None, time_budget_seconds=1800):
 def _harness(monkeypatch, questions, *, transcript='Мой голосовой ответ.',
              transcription_delay=0, fail_transcription=False, drop_transcription=False,
              unregistered_transcript=None, provider_error=False,
-             null_committed_item_id=False,
+             null_committed_item_id=False, cancel_error=False,
              time_budget_seconds=1800, expire_if_due=None):
     current = {'index': 0}
     row = SimpleNamespace(state='fake-state', pending=None, started=time.time())
@@ -160,7 +173,8 @@ def _harness(monkeypatch, questions, *, transcript='Мой голосовой о
                               fail_transcription=fail_transcription,
                               drop_transcription=drop_transcription,
                               unregistered_transcript=unregistered_transcript,
-                              null_committed_item_id=null_committed_item_id)
+                              null_committed_item_id=null_committed_item_id,
+                              cancel_error=cancel_error)
         upstreams.append(stream)
         assert kwargs['additional_headers']['Authorization'] == 'Api-Key secret'
         assert 'speech-realtime-deepseek-v4-flash' in url
@@ -254,7 +268,7 @@ def test_voice_bridge_auth_speech_and_authoritative_answer(monkeypatch):
     assert submitted[0].question_id == first.id
     assert submitted[0].text == 'Мой голосовой ответ.'
     assert sum(e['type'] == 'input_audio_buffer.commit' for e in upstreams[0].sent) == 1
-    assert any(e == {'type': 'conversation.item.delete', 'item_id': 'spoken-1'}
+    assert any(e['type'] == 'conversation.item.delete' and e['item_id'] == 'spoken-1'
                for e in upstreams[0].sent)
     assert any(e['type'] == 'response.cancel' for e in upstreams[0].sent)
     assert budget.settled and budget.settled[0][1] > 0
@@ -472,3 +486,58 @@ def test_speech_mismatch_is_rejected():
     assert voice._spoken_matches_question('Расскажите про FastAPI!', 'Расскажите про FastAPI.')
     assert voice._spoken_matches_question('Что такое Фаст АПИ?', 'Что такое FastAPI?')
     assert not voice._spoken_matches_question('Вот ответ про FastAPI.', 'Расскажите про FastAPI.')
+
+
+def test_yandex_channel_retries_unavailable_upstream_before_ready(monkeypatch):
+    class Unavailable:
+        async def __aenter__(self):
+            raise OSError('upstream_unavailable')
+
+    attempts = []
+    streams = []
+
+    def fake_connect(*args, **kwargs):
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            return Unavailable()
+        stream = FakeUpstream('stt', [])
+        streams.append(stream)
+        return stream
+
+    monkeypatch.setattr(voice, 'connect', fake_connect)
+
+    async def exercise():
+        async with AsyncExitStack() as stack:
+            stream = await voice._open_yandex_channel(
+                stack, 'wss://example.invalid', {'Authorization': 'secret'},
+                transcribe=True, max_size=2048)
+            assert stream is streams[0]
+            assert stream.sent[0]['type'] == 'session.update'
+        assert len(attempts) == 2
+
+    asyncio.run(exercise())
+
+
+def test_provider_error_code_does_not_include_raw_payload():
+    event = {'type': 'error', 'error': {'code': 'upstream_unavailable',
+                                      'message': 'Candidate transcript and private key'}}
+    assert voice._provider_error_code(event) == 'upstream_unavailable'
+
+
+def test_cancel_race_does_not_drop_recognized_answer(monkeypatch):
+    question = SimpleNamespace(id='q1', text='Как проверить инструмент?')
+    app, _, upstreams, submitted, _ = _harness(
+        monkeypatch, [question], cancel_error=True)
+    with TestClient(app) as client:
+        with client.websocket_connect('/api/ai/sessions/interview/voice') as ws:
+            _start_voice(ws, question)
+            ws.send_json({'type': 'start_answer'})
+            ws.send_json({'type': 'audio',
+                          'audio': base64.b64encode(b'\x01\x00' * 100).decode()})
+            ws.send_json({'type': 'finish_answer'})
+            assert ws.receive_json()['speaker'] == 'candidate'
+            assert ws.receive_json()['type'] == 'state'
+            ws.send_json({'type': 'stop'})
+    assert len(submitted) == 1
+    assert any(e['type'] == 'response.cancel' and e.get('event_id')
+               for e in upstreams[0].sent)
