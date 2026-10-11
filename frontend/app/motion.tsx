@@ -1,7 +1,7 @@
 'use client';
 
 import {createContext, useContext, useEffect, useRef, useState, type ReactNode} from 'react';
-import {ArrowUpRight, Check, Wrench} from 'lucide-react';
+import {ArrowUpRight, Check, PackageCheck} from 'lucide-react';
 import type {OrbState} from './design';
 
 const MotionContext = createContext({allowed: false});
@@ -82,9 +82,9 @@ function NeuralMark() {
 export function IntelligenceSection() {
   const [step, setStep] = useState(0);
   const panels = [
-    {label: 'Вопрос', title: 'С чего начинается диалог', text: '«Как вы подготовите металлические кромки перед сваркой?»', code: 'Подготовка соединения', detail: 'Тема · сварка / рабочий процесс'},
-    {label: 'Контекст', title: 'Важно, как вы рассуждаете', text: 'ИИ уточняет порядок действий, выбор инструмента и меры безопасности.', code: 'Очистка → проверка → сварка', detail: 'Ответ → уточнение → объяснение'},
-    {label: 'Вывод', title: 'У оценки есть основания', text: 'В отчёте видны слова кандидата и вопросы, которые ещё требуют проверки.', code: 'Устный ответ ≠ практический допуск', detail: 'Решение о найме — за человеком'},
+    {label: 'Вопрос', title: 'С чего начинается диалог', text: '«Что вы сделаете, если при приёмке товара обнаружили недостачу?»', code: 'Приёмка товара', detail: 'Тема · склад / учёт товара'},
+    {label: 'Контекст', title: 'Важно, как вы рассуждаете', text: 'ИИ уточняет, как кандидат проверит документы и сообщит о расхождении.', code: 'Сверка → фиксация → сообщение', detail: 'Ответ → уточнение → объяснение'},
+    {label: 'Вывод', title: 'У оценки есть основания', text: 'В отчёте видны ответы и навыки, которые ещё стоит проверить на рабочем месте.', code: 'Устный ответ ≠ работа на практике', detail: 'Решение о найме — за человеком'},
   ];
   return <section className="intelligence-section" id="intelligence" aria-labelledby="intelligence-title">
     <div className="intelligence-heading"><span className="small-kicker"><span/> MIMAS / КАНДИДАТ И ИИ</span><h2 id="intelligence-title">Два участника.<br/><span>Одна понятная картина.</span></h2><p>Кандидат объясняет рабочую задачу.<br/>ИИ помогает увидеть ход решения.</p></div>
@@ -94,7 +94,7 @@ export function IntelligenceSection() {
           <div className="scene-grid" aria-hidden="true"/>
           <div className="scene-meta"><span>01 / ГОЛОСОВОЙ ДИАЛОГ</span><span className="scene-live"><i/> КАНДИДАТ + ИИ</span></div>
           <NeuralMark/><Pointer kind="human"/><Pointer kind="agent"/>
-          <span className="scene-code" aria-hidden="true"><Wrench size={13}/> вопрос → решение → объяснение</span>
+          <span className="scene-code" aria-hidden="true"><PackageCheck size={13}/> вопрос → решение → объяснение</span>
         </div>
         <div className="intelligence-caption"><span className="scene-number">01</span><div><h3>Диалог, а не допрос.</h3><p>Кандидат объясняет действия. ИИ задаёт уточнения. В центре всегда остаётся человек.</p></div><ArrowUpRight aria-hidden="true" size={20}/></div>
       </article>

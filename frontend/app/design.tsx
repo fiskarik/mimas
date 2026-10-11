@@ -20,15 +20,15 @@ const interviewSteps = [
     number: '01',
     icon: <Mic/>,
     title: 'Расскажите',
-    text: 'Вопросы по профессии и рабочим ситуациям. Отвечайте голосом и объясняйте свой подход.',
+    text: 'Вопросы о работе в магазине и на складе. Отвечайте голосом и объясняйте, как поступите.',
     label: 'ГОЛОСОВОЙ ДИАЛОГ',
   },
   {
     number: '02',
     icon: <ClipboardCheck/>,
     title: 'Разберите ситуацию',
-    text: 'Например, сварщику предложат объяснить подготовку соединения и действия при дефекте шва.',
-    label: 'ПРОФЕССИОНАЛЬНЫЕ ЗНАНИЯ',
+    text: 'Например, что делать, если цена на кассе не совпала с ценником или при приёмке не хватает товара.',
+    label: 'РАБОЧИЕ СИТУАЦИИ',
   },
   {
     number: '03',
@@ -40,9 +40,9 @@ const interviewSteps = [
 ];
 
 const sampleSkills = [
-  {skill: 'Подготовка соединения', status: 'Подход описан', text: 'Объяснил порядок очистки кромок перед сваркой.', bars: 6},
-  {skill: 'Контроль шва', status: 'Нужно уточнить', text: 'Упомянул осмотр, но не раскрыл признаки дефектов.', bars: 3},
-  {skill: 'Практический допуск', status: 'Не проверялся', text: 'Устный ответ не подтверждает практический навык или допуск.', bars: 0},
+  {skill: 'Работа с покупателем', status: 'Подход описан', text: 'Объяснил, как проверить цену и спокойно ответить покупателю.', bars: 6},
+  {skill: 'Приёмка товара', status: 'Нужно уточнить', text: 'Назвал сверку количества, но не описал действия при расхождении.', bars: 3},
+  {skill: 'Работа с кассой', status: 'Не проверялось', text: 'Устный ответ не подтверждает практическое владение кассой.', bars: 0},
 ];
 
 export function Landing({onCompany}: {onCompany: () => void}) {
@@ -64,7 +64,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
         <div className="hero-copy">
           <h1 id="hero-title">За каждым <span className="hero-lemon"><PixelMark/>навыком</span><br/>стоит <span className="hero-mint"><PixelMark variant="steps"/>человек.</span></h1>
           <div className="hero-bottom">
-            <p>Сварщик, электрик, слесарь или токарь — каждый может рассказать о своём опыте. MIMAS задаёт вопросы по вакансии и сохраняет объяснения для человека, который принимает решение.</p>
+            <p>Продавец-кассир, работник торгового зала, сборщик заказов или работник склада — каждый может рассказать о своём опыте. MIMAS задаёт вопросы о знакомых задачах и сохраняет ответы для человека, который принимает решение.</p>
             <div className="hero-actions">
               <a className="primary" href="/?view=candidate">Найти вакансию <ArrowUpRight size={18}/></a>
               <button className="hero-company-cta" onClick={onCompany}>Открыть кабинет компании <ArrowUpRight size={17}/></button>
@@ -78,7 +78,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
 
       <section className="landing-manifesto" aria-labelledby="manifesto-title">
         <h2 id="manifesto-title">Меньше догадок.<br/><span>Больше понимания.</span></h2>
-        <p>Резюме перечислит опыт. Разговор поможет понять, как кандидат рассуждает<br/>о знакомых рабочих задачах. Практические умения проверяются отдельно.</p>
+        <p>Резюме перечислит места работы. Разговор покажет, как кандидат решает<br/>знакомые задачи магазина и склада. Практические умения проверяются отдельно.</p>
         <a className="manifesto-link" href="/?view=candidate">Смотреть вакансии <ArrowUpRight size={18}/></a>
       </section>
 
@@ -87,8 +87,8 @@ export function Landing({onCompany}: {onCompany: () => void}) {
       <section className="journey-section" id="how">
         <div className="section-intro">
           <span className="small-kicker"><BrandLogo tone="dark" width={52}/> 01 / ПРОЦЕСС</span>
-          <h2>Одна вакансия.<br/><span>Предметный разговор.</span></h2>
-          <p>Компания готовит вопросы, кандидат отвечает голосом, обе стороны видят результат.</p>
+          <h2>Рабочие задачи.<br/><span>Предметный разговор.</span></h2>
+          <p>Кандидат отвечает голосом, а компания видит ответы и разбор навыков.</p>
         </div>
         <div className="journey-grid">{interviewSteps.map(item =>
           <article key={item.number}>
@@ -97,7 +97,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
               {item.number === '01'
                 ? <div className="signal-wave">{Array.from({length: 25}, (_, i) => <i key={i} style={{height: (16 + Math.round(Math.abs(Math.sin(i * 1.7)) * (52 - Math.abs(12-i)*3))) + 'px'}}/>)}</div>
                 : item.number === '02'
-                  ? <div className="scenario-fragment"><span>Ситуация</span><strong>Как подготовить кромки к сварке?</strong><small>Объясните порядок действий.</small></div>
+                  ? <div className="scenario-fragment"><span>Ситуация</span><strong>Цена на кассе не совпала с ценником. Что сделаете?</strong><small>Объясните порядок действий.</small></div>
                   : <div className="signal-result"><PixelMark/><span>Ответ сохранён<small>Разбор · запись · уточнения</small></span><Check size={18}/></div>}
             </div>
             <span className="journey-label">{item.label}</span>
@@ -116,7 +116,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
         </div>
         <div className="evidence-sheet">
           <div className="sheet-top"><span><PixelMark/> РАЗБОР ОТВЕТОВ</span><span className="sample-badge">Образец</span></div>
-          <h3>Сварщик</h3><p>Выводы ограничены устными ответами</p>
+          <h3>Навыки для работы в магазине</h3><p>Выводы ограничены устными ответами</p>
           {sampleSkills.map(item => <div className="skill-example" key={item.skill}>
             <div><strong>{item.skill}</strong><span>{item.status}</span></div>
             <div className="skill-bars" aria-hidden="true">{Array.from({length: 12}, (_, i) => <i className={i < item.bars * 1.5 ? 'filled' : ''} key={i}/>)}</div>
@@ -153,7 +153,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
     <footer className="landing-footer">
       <div className="footer-top">
         <a href="/" className="brand-word" aria-label="mimas — главная"><BrandLogo tone="light" width="clamp(130px, 14vw, 175px)"/></a>
-        <p>Голосовой разговор о профессии.<br/>Решение остаётся за человеком.</p>
+        <p>Голосовой разговор о рабочих задачах.<br/>Решение остаётся за человеком.</p>
         <nav aria-label="Навигация в подвале"><a href="#how">Процесс</a><a href="#evidence">Отчёт</a><a href="#integrity">Правила</a></nav>
         <button className="footer-enter" onClick={onCompany}>Кабинет компании <ArrowUpRight size={18}/></button>
       </div>

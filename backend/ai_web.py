@@ -193,8 +193,8 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 return {'id': previous.session_id, 'token': x_candidate_token}
             if not profession:
                 raise HTTPException(404, 'Профессия не найдена')
-            if json.loads(profile.stack)[0].casefold() != profession.name.casefold():
-                raise HTTPException(409, 'Общее интервью должно соответствовать профессии в профиле.')
+            if profession_id_for_name(json.loads(profile.stack)[0]) != profession.id:
+                raise HTTPException(409, 'Общее интервью должно соответствовать выбранной должности в профиле.')
             plan = CompetencyPlan.model_validate_json(profession.plan_json)
             settings = InterviewSettings.model_validate_json(profession.settings_json)
             limits = Limits(max_questions=settings.max_questions,
@@ -273,10 +273,10 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                     general = db.get(GeneralAssessment, (profile.id, required_id))
                     general_session = db.get(AISession, general.session_id) if general else None
                 if profession:
-                    if json.loads(profile.stack)[0].casefold() != profession.name.casefold():
-                        raise HTTPException(409, 'Для этой вакансии нужен профиль соответствующей профессии.')
+                    if profession_id_for_name(json.loads(profile.stack)[0]) != profession.id:
+                        raise HTTPException(409, 'Для этой вакансии нужен профиль соответствующего направления.')
                     if not general_session or InterviewState.model_validate_json(general_session.state).phase != Phase.COMPLETED:
-                        raise HTTPException(409, 'Сначала завершите общее интервью по профессии.')
+                        raise HTTPException(409, 'Сначала завершите общее интервью по выбранному направлению.')
             plan = CompetencyPlan.model_validate_json(template.plan_json)
             settings = InterviewSettings.model_validate_json(template.settings_json)
             limits = Limits(max_questions=settings.max_questions,

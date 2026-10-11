@@ -1,5 +1,5 @@
 export type Level = 'junior'|'middle'|'senior';
-export type Profile = {id:string;name:string;role:string;level:Level;stack:string[];years_experience:number;github_url:string|null;desired_salary_rub:number|null;discoverable:boolean};
+export type Profile = {id:string;name:string;role:string;profession_id?:string|null;level:Level;stack:string[];years_experience:number;github_url:string|null;desired_salary_rub:number|null;discoverable:boolean};
 export type Match = {score:number;reasons:string[];stack_overlap:number;level_match:boolean;salary_match:boolean;compatible:boolean};
 export type Profession = {id:string;name:string;description:string};
 export type Opportunity = {id:string;profession_id?:string|null;company_name:string;title:string;description:string;role:string;level:Level;stack:string[];salary_min_rub:number|null;salary_max_rub:number|null;employment_type:'full_time'|'contract';status:string;template_status?:string;template_version?:string;additional_required?:boolean;match?:Match;interested?:boolean};

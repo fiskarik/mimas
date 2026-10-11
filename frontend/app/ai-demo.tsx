@@ -218,7 +218,7 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
     <main className="ai-demo-main">
       {!ready?<p className="voice-load">Загружаем интервью…</p>
       :!access?<section className="voice-preflight">
-        <div className="voice-preflight-head"><span className="voice-emblem"><BrandLogo tone="dark" width={132} className="voice-preflight-logo"/></span><div><span className="voice-eyebrow">MIMAS · ТЕХНИЧЕСКОЕ ИНТЕРВЬЮ</span><h1>Разговор о ваших навыках</h1></div></div>
+        <div className="voice-preflight-head"><span className="voice-emblem"><BrandLogo tone="dark" width={132} className="voice-preflight-logo"/></span><div><span className="voice-eyebrow">MIMAS · ГОЛОСОВОЕ AI-ИНТЕРВЬЮ</span><h1>Разговор о ваших навыках</h1></div></div>
         <div className="voice-preflight-steps"><span>01 · Профиль</span><span>02 · Вакансия</span><span>03 · Интервью</span></div>
         <div className="voice-preflight-grid"><article><span className="voice-card-index">НАЧАЛО</span><h2>Выберите вакансию</h2><p>Зарегистрируйтесь как кандидат и выберите вакансию. После проверки устройств MIMAS проведёт голосовое интервью по утверждённому шаблону. Длительность — до 20 минут.</p><a className="voice-cta" href="/?view=candidate"><ArrowRight size={18}/> В кабинет кандидата</a></article><article><span className="voice-card-index">ЧТО ПОНАДОБИТСЯ</span><h2>Проверьте устройства</h2><p>Разрешите доступ к камере и микрофону, наденьте наушники. MIMAS озвучит вопрос, вы ответите голосом, а стенограмма сохранится в отчёте.</p><div className="voice-device-list"><span><Video size={18}/> Камера</span><span><Mic size={18}/> Микрофон</span><span><Volume2 size={18}/> Наушники</span></div></article></div>
       </section>

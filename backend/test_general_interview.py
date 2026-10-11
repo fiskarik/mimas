@@ -53,7 +53,8 @@ def test_profession_interview_reused_and_vacancy_follow_up_optional(monkeypatch)
             'years_experience': 3}).json()['token']
         candidate = {'X-Candidate-Token': candidate_token}
         catalog = client.get('/api/market/professions').json()
-        assert {item['id'] for item in catalog} >= {'welder', 'fitter', 'turner', 'electrician'}
+        assert {item['id'] for item in catalog} == {
+            'cashier', 'sales_associate', 'order_picker', 'stock_worker'}
         assert client.post('/api/ai/general-sessions', headers=candidate, json={
             'profession_id': 'welder', 'consent': False,
             'share_with_companies': False}).status_code == 422

@@ -1,0 +1,145 @@
+:global(.market) .profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 24px;
+}
+
+.report {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: 24px;
+  padding-top: 26px;
+  border-top: 1px solid #9daf9b;
+}
+
+.reportHeading,
+.interviewHeading,
+.skillHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.reportHeading h3 {
+  margin: 4px 0 0;
+  font: 400 clamp(25px, 2.3vw, 34px)/1.15 Georgia, 'Times New Roman', serif;
+  letter-spacing: -.035em;
+}
+
+.reportHeading > span {
+  flex-shrink: 0;
+}
+
+.empty {
+  margin: 18px 0 0;
+  padding: 20px;
+  border: 1px dashed #9daf9b;
+  border-radius: 16px;
+  color: #465f4b;
+  background: #f1f5ed;
+  line-height: 1.55;
+}
+
+.interview {
+  padding-top: 21px;
+  margin-top: 20px;
+  border-top: 1px solid #b7c7b7;
+}
+
+.interviewHeading {
+  display: block;
+  margin-bottom: 15px;
+}
+
+.interviewHeading h4 {
+  margin: 4px 0 0;
+  font-size: clamp(18px, 1.7vw, 23px);
+  line-height: 1.25;
+}
+
+.skillGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.skill {
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid #bdcdb9;
+  border-radius: 17px;
+  background: #f6f8f1;
+}
+
+.skillHeading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.skillHeading strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.assessed,
+.insufficient {
+  padding: 5px 9px;
+  border-radius: 100px;
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.assessed {
+  background: #d9ead2;
+  color: #244d2c;
+}
+
+.insufficient {
+  background: #e7e9e4;
+  color: #526255;
+}
+
+.skill p {
+  margin: 9px 0 0;
+  font-size: 12px;
+  color: #526255;
+}
+
+.skill .evidence {
+  padding-top: 9px;
+  border-top: 1px solid #d4dfd0;
+  color: #38513d;
+  line-height: 1.5;
+}
+
+.reportButton {
+  margin-top: 16px;
+}
+
+.caveat {
+  margin: 20px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #526255;
+}
+
+@media (max-width: 760px) {
+  :global(.market) .profile {
+    grid-template-columns: 1fr;
+  }
+
+  .report {
+    grid-column: 1;
+  }
+
+  .skillGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .reportHeading {
+    flex-wrap: wrap;
+  }
+}
