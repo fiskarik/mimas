@@ -497,7 +497,7 @@ def test_yandex_channel_retries_unavailable_upstream_before_ready(monkeypatch):
     streams = []
 
     def fake_connect(*args, **kwargs):
-        attempts.append(kwargs)
+        attempts.append((args, kwargs))
         if len(attempts) == 1:
             return Unavailable()
         stream = FakeUpstream('stt', [])
@@ -509,11 +509,14 @@ def test_yandex_channel_retries_unavailable_upstream_before_ready(monkeypatch):
     async def exercise():
         async with AsyncExitStack() as stack:
             stream = await voice._open_yandex_channel(
-                stack, 'wss://example.invalid', {'Authorization': 'secret'},
+                stack, 'wss://example.invalid/' + voice.VOICE_MODEL,
+                {'Authorization': 'secret'},
                 transcribe=True, max_size=2048)
             assert stream is streams[0]
             assert stream.sent[0]['type'] == 'session.update'
         assert len(attempts) == 2
+        assert voice.VOICE_MODEL in attempts[0][0][0]
+        assert voice.VOICE_FALLBACK_MODEL in attempts[1][0][0]
 
     asyncio.run(exercise())
 
@@ -541,3 +544,29 @@ def test_cancel_race_does_not_drop_recognized_answer(monkeypatch):
     assert len(submitted) == 1
     assert any(e['type'] == 'response.cancel' and e.get('event_id')
                for e in upstreams[0].sent)
+
+
+def test_yandex_channel_falls_back_on_provider_unavailable_event(monkeypatch):
+    class ProviderUnavailable(FakeUpstream):
+        async def send(self, payload):
+            await self.queue.put({'type': 'error', 'error': {
+                'type': 'server_error', 'code': 'upstream_unavailable',
+                'message': 'temporary'}})
+
+    attempts = []
+
+    def fake_connect(url, **kwargs):
+        attempts.append(url)
+        return ProviderUnavailable('stt', []) if len(attempts) == 1 else FakeUpstream('stt', [])
+
+    monkeypatch.setattr(voice, 'connect', fake_connect)
+
+    async def exercise():
+        async with AsyncExitStack() as stack:
+            stream = await voice._open_yandex_channel(
+                stack, 'wss://example.invalid/' + voice.VOICE_MODEL,
+                {'Authorization': 'secret'}, transcribe=True, max_size=2048)
+            assert stream.sent[0]['type'] == 'session.update'
+        assert voice.VOICE_FALLBACK_MODEL in attempts[1]
+
+    asyncio.run(exercise())

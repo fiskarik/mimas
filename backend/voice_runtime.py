@@ -48,6 +48,7 @@ INPUT_TEXT_RUB_PER_TOKEN = Decimal('0.0003')
 OUTPUT_TEXT_RUB_PER_TOKEN = Decimal('0.0005')
 WINDOW_RESERVATION_RUB = Decimal('10.00')
 VOICE_MODEL = 'speech-realtime-deepseek-v4-flash'
+VOICE_FALLBACK_MODEL = 'speech-realtime-260528'
 VOICE_INSTRUCTIONS = (
     'Ты голос профессионального интервью MIMAS. На каждый текстовый запрос '
     'произноси только сам вопрос дословно. Не отвечай на него, не пересказывай, '
@@ -61,6 +62,10 @@ STT_INSTRUCTIONS = (
 
 
 class VoiceProtocolError(Exception):
+    pass
+
+
+class VoiceTransientUpstreamError(VoiceProtocolError):
     pass
 
 
@@ -82,8 +87,9 @@ async def _open_yandex_channel(stack: AsyncExitStack, url: str, headers: dict,
                                *, transcribe: bool, max_size: int):
     """Do not announce readiness until Yandex accepts the session settings."""
     channel = 'stt' if transcribe else 'tts'
-    for attempt in range(2):
-        context = connect(url, additional_headers=headers, ping_interval=20,
+    urls = (url, url.replace('/' + VOICE_MODEL, '/' + VOICE_FALLBACK_MODEL))
+    for attempt, candidate_url in enumerate(urls):
+        context = connect(candidate_url, additional_headers=headers, ping_interval=20,
                           open_timeout=15, max_size=max_size)
         stream = None
         try:
@@ -97,15 +103,19 @@ async def _open_yandex_channel(stack: AsyncExitStack, url: str, headers: dict,
                     stack.push_async_exit(context.__aexit__)
                     return stream
                 if event.get('type') == 'error':
+                    code = _provider_error_code(event)
+                    if code in ('upstream_unavailable', 'server_error'):
+                        raise VoiceTransientUpstreamError(code)
                     raise VoiceProtocolError(
-                        'Не удалось настроить голосовой сервис ('
-                        + _provider_error_code(event) + ').')
+                        'Не удалось настроить голосовой сервис (' + code + ').')
             raise VoiceProtocolError('Голосовой сервис не подтвердил подключение.')
-        except (ConnectionClosed, TimeoutError, OSError) as exc:
-            LOGGER.warning('Yandex voice %s connection failed: %s code=%s reason=%s',
-                           channel, type(exc).__name__,
+        except (ConnectionClosed, TimeoutError, OSError, VoiceTransientUpstreamError) as exc:
+            LOGGER.warning('Yandex voice %s model=%s connection failed: %s code=%s reason=%s',
+                           channel, VOICE_MODEL if attempt == 0 else VOICE_FALLBACK_MODEL,
+                           type(exc).__name__,
                            getattr(getattr(exc, 'rcvd', None), 'code', None),
                            _provider_close_reason(exc) if isinstance(exc, ConnectionClosed)
+                           else str(exc) if isinstance(exc, VoiceTransientUpstreamError)
                            else 'none')
             if stream is not None:
                 await context.__aexit__(None, None, None)
