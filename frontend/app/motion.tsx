@@ -1,15 +1,14 @@
 'use client';
 
 import {createContext, useContext, useEffect, useRef, useState, type ReactNode} from 'react';
-import {ArrowUpRight, Check, Wrench, Pause, Play} from 'lucide-react';
+import {ArrowUpRight, Check, Wrench} from 'lucide-react';
 import type {OrbState} from './design';
 
-const MotionContext = createContext({allowed: false, reduced: false, paused: false, toggle: () => {}});
+const MotionContext = createContext({allowed: false});
 
 export function MotionProvider({children}: {children: ReactNode}) {
   const [ready, setReady] = useState(false);
   const [reduced, setReduced] = useState(false);
-  const [paused, setPaused] = useState(false);
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReduced(preference.matches);
@@ -17,20 +16,10 @@ export function MotionProvider({children}: {children: ReactNode}) {
     preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
   }, []);
-  const allowed = ready && !reduced && !paused;
-  return <MotionContext.Provider value={{allowed, reduced, paused, toggle: () => setPaused(value => !value)}}>
+  const allowed = ready && !reduced;
+  return <MotionContext.Provider value={{allowed}}>
     <div className="motion-root" data-motion={allowed ? 'playing' : 'paused'}>{children}</div>
   </MotionContext.Provider>;
-}
-
-export function MotionToggle() {
-  const {allowed, reduced, toggle} = useContext(MotionContext);
-  return <button className="motion-toggle" onClick={toggle} disabled={reduced}
-    aria-label={reduced ? 'Анимация отключена настройками устройства' : allowed ? 'Остановить анимацию' : 'Включить анимацию'}
-    aria-pressed={allowed} title={reduced ? 'На устройстве включено уменьшение движения' : undefined}>
-    {allowed ? <Pause size={12}/> : <Play size={12}/>}
-    <span>{allowed ? 'Пауза анимации' : 'Анимация выключена'}</span>
-  </button>;
 }
 
 /** Silent, local video; pauses off screen, in background tabs and for reduced motion. */
@@ -78,7 +67,7 @@ export function InterviewOrb({state = 'idle', compact = false}: {state?: OrbStat
 function Pointer({kind}: {kind: 'human' | 'agent'}) {
   return <div className={`scene-pointer pointer-${kind}`} aria-hidden="true">
     <svg viewBox="0 0 34 42"><path d="M3 2L30 24L17 26L11 39Z" fill="currentColor" stroke="#ffffff90" strokeWidth="1.5"/></svg>
-    <span><i/>{kind === 'human' ? 'Кандидат' : 'mimas AI'}</span>
+    <span><i/>{kind === 'human' ? 'Кандидат' : 'ИИ'}</span>
   </div>;
 }
 
@@ -94,20 +83,20 @@ export function IntelligenceSection() {
   const [step, setStep] = useState(0);
   const panels = [
     {label: 'Вопрос', title: 'С чего начинается диалог', text: '«Как вы подготовите металлические кромки перед сваркой?»', code: 'Подготовка соединения', detail: 'Тема · сварка / рабочий процесс'},
-    {label: 'Контекст', title: 'Важно, как вы рассуждаете', text: 'AI уточняет порядок действий, выбор инструмента и меры безопасности.', code: 'Очистка → проверка → сварка', detail: 'Ответ → уточнение → объяснение'},
+    {label: 'Контекст', title: 'Важно, как вы рассуждаете', text: 'ИИ уточняет порядок действий, выбор инструмента и меры безопасности.', code: 'Очистка → проверка → сварка', detail: 'Ответ → уточнение → объяснение'},
     {label: 'Вывод', title: 'У оценки есть основания', text: 'В отчёте видны слова кандидата и вопросы, которые ещё требуют проверки.', code: 'Устный ответ ≠ практический допуск', detail: 'Решение о найме — за человеком'},
   ];
   return <section className="intelligence-section" id="intelligence" aria-labelledby="intelligence-title">
-    <div className="intelligence-heading"><span className="small-kicker"><span/> MIMAS / HUMAN + AI</span><h2 id="intelligence-title">Два участника.<br/><span>Одна понятная картина.</span></h2><p>Кандидат объясняет рабочую задачу.<br/>mimas помогает увидеть ход решения.</p></div>
+    <div className="intelligence-heading"><span className="small-kicker"><span/> MIMAS / КАНДИДАТ И ИИ</span><h2 id="intelligence-title">Два участника.<br/><span>Одна понятная картина.</span></h2><p>Кандидат объясняет рабочую задачу.<br/>ИИ помогает увидеть ход решения.</p></div>
     <div className="intelligence-grid">
       <article className="intelligence-card">
-        <div className="collaboration-scene motion-scene" role="img" aria-label="Кандидат и mimas AI обсуждают рабочую задачу">
+        <div className="collaboration-scene motion-scene" role="img" aria-label="Кандидат и ИИ обсуждают рабочую задачу">
           <div className="scene-grid" aria-hidden="true"/>
-          <div className="scene-meta"><span>01 / СОВМЕСТНОЕ МЫШЛЕНИЕ</span><span className="scene-live"><i/> HUMAN + AI</span></div>
+          <div className="scene-meta"><span>01 / ГОЛОСОВОЙ ДИАЛОГ</span><span className="scene-live"><i/> КАНДИДАТ + ИИ</span></div>
           <NeuralMark/><Pointer kind="human"/><Pointer kind="agent"/>
           <span className="scene-code" aria-hidden="true"><Wrench size={13}/> вопрос → решение → объяснение</span>
         </div>
-        <div className="intelligence-caption"><span className="scene-number">01</span><div><h3>Диалог, а не допрос.</h3><p>Кандидат объясняет действия. AI задаёт уточнения. В центре всегда остаётся человек.</p></div><ArrowUpRight aria-hidden="true" size={20}/></div>
+        <div className="intelligence-caption"><span className="scene-number">01</span><div><h3>Диалог, а не допрос.</h3><p>Кандидат объясняет действия. ИИ задаёт уточнения. В центре всегда остаётся человек.</p></div><ArrowUpRight aria-hidden="true" size={20}/></div>
       </article>
       <article className="intelligence-card">
         <div className="reasoning-scene motion-scene" data-step={step}>
@@ -116,7 +105,7 @@ export function IntelligenceSection() {
           <div className="reasoning-orbit" aria-hidden="true"><i/><i/><i/></div>
           <div className="reasoning-core"><InterviewOrb state={step === 0 ? 'speaking' : step === 1 ? 'thinking' : 'saved'}/></div>
           <div className="context-fragment" aria-live="polite"><span>{panels[step].detail}</span><code>{panels[step].code}</code><i><Check size={12}/> {step === 2 ? 'Основания собраны' : step === 1 ? 'Контекст связан' : 'Тема определена'}</i></div>
-          <div className="reasoning-tabs" role="tablist" aria-label="Этапы AI-интервью">{panels.map((panel,i)=><button key={panel.label} id={`reasoning-tab-${i}`} role="tab" aria-selected={step === i} aria-controls="reasoning-panel" tabIndex={step === i ? 0 : -1}
+          <div className="reasoning-tabs" role="tablist" aria-label="Этапы интервью с ИИ">{panels.map((panel,i)=><button key={panel.label} id={`reasoning-tab-${i}`} role="tab" aria-selected={step === i} aria-controls="reasoning-panel" tabIndex={step === i ? 0 : -1}
             onClick={() => setStep(i)} onKeyDown={event => {
               const next = event.key === 'ArrowRight' ? (i+1)%3 : event.key === 'ArrowLeft' ? (i+2)%3 : event.key === 'Home' ? 0 : event.key === 'End' ? 2 : null;
               if (next !== null) {event.preventDefault(); setStep(next); document.getElementById(`reasoning-tab-${next}`)?.focus();}
@@ -125,6 +114,5 @@ export function IntelligenceSection() {
         <div className="intelligence-caption" id="reasoning-panel" role="tabpanel" aria-labelledby={`reasoning-tab-${step}`}><span className="scene-number">02</span><div><h3>{panels[step].title}</h3><p>{panels[step].text}</p></div><ArrowUpRight aria-hidden="true" size={20}/></div>
       </article>
     </div>
-    <div className="intelligence-note"><span>ТЕХНОЛОГИЯ ПОМОГАЕТ ПОНЯТЬ. ЧЕЛОВЕК ПРИНИМАЕТ РЕШЕНИЕ.</span><a href="/?view=candidate">Найти вакансию <ArrowUpRight size={15}/></a></div>
   </section>;
 }

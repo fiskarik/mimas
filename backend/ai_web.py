@@ -16,9 +16,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base, Database
-from backend.marketplace import CandidateAssessment, CandidateInterest, candidate_from_token
+from backend.marketplace import CandidateAssessment, CandidateInterest, InterviewSettings, candidate_from_token
+from backend.general_interview import GeneralAssessment, Profession, profession_id_for_name
 from ai_core.interview.engine import InterviewEngine
-from ai_core.interview.schemas import CandidateAnswer, InterviewInput, MAX_INTERVIEW_SECONDS
+from ai_core.interview.schemas import CandidateAnswer, InterviewInput, Limits, MAX_INTERVIEW_SECONDS
 from ai_core.models import Level
 from ai_core.interview.state import InterviewState, Phase
 from backend.interview_completion import CompletionError, complete_without_ai
@@ -56,6 +57,12 @@ def interview_deadline(row: AISession, state: InterviewState) -> float | None:
 class SessionCreate(BaseModel):
     opportunity_id: str
     consent: bool
+
+
+class GeneralSessionCreate(BaseModel):
+    profession_id: str
+    consent: bool
+    share_with_companies: bool
 
 def register_ai_routes(app: FastAPI, database: Database, authorize_company):
     @app.exception_handler(ProviderError)
@@ -99,7 +106,8 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         provider.model = row.model
         engine = InterviewEngine(provider, config=state.config, limits=state.limits,
                                  plan=state.plan_snapshot, clock=time.time,
-                                 approved_primary_questions=bool(row.opportunity_id))
+                                 approved_primary_questions=bool(row.opportunity_id or (
+                                     state.plan_snapshot and state.plan_snapshot.version.startswith('profession-'))))
         engine.state = state
         engine.state.interview_id = row.id
         engine.limits = engine.state.limits
@@ -154,7 +162,9 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
 
     def public_view(row: AISession):
         result = view(row)
-        if row.opportunity_id:
+        state = InterviewState.model_validate_json(row.state)
+        is_general = bool(state.plan_snapshot and state.plan_snapshot.version.startswith('profession-'))
+        if row.opportunity_id or is_general:
             from backend.media import VideoRecording
             with database.session() as db:
                 recording = db.get(VideoRecording, row.id)
@@ -167,6 +177,71 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 result['recording_status'] = 'completed'
                 result['recording_incomplete'] = bool(recording.interrupted)
         return result
+
+    @app.post('/api/ai/general-sessions')
+    async def create_general_session(body: GeneralSessionCreate,
+                                     x_candidate_token: str | None = Header(None)):
+        from ai_core.interview.planner import CompetencyPlan
+        if not body.consent:
+            raise HTTPException(422, 'Подтвердите согласие на запись общего интервью.')
+        profile = candidate_from_token(database, x_candidate_token)
+        async with lock_for(profile.id + ':general:' + body.profession_id):
+            with database.session() as db:
+                previous = db.get(GeneralAssessment, (profile.id, body.profession_id))
+                profession = db.get(Profession, body.profession_id)
+            if previous:
+                return {'id': previous.session_id, 'token': x_candidate_token}
+            if not profession:
+                raise HTTPException(404, 'Профессия не найдена')
+            if json.loads(profile.stack)[0].casefold() != profession.name.casefold():
+                raise HTTPException(409, 'Общее интервью должно соответствовать профессии в профиле.')
+            plan = CompetencyPlan.model_validate_json(profession.plan_json)
+            settings = InterviewSettings.model_validate_json(profession.settings_json)
+            limits = Limits(max_questions=settings.max_questions,
+                            max_follow_ups_per_question=settings.max_follow_ups,
+                            time_budget_seconds=settings.duration_minutes * 60)
+            try:
+                provider = create_llm_provider(provider='yandex', budget=YandexBudget(database))
+            except ValueError as exc:
+                raise HTTPException(503, str(exc)) from None
+            config = InterviewInput(role=plan.role, target_level=Level(profile.level))
+            context = {'candidate_level': profile.level, 'candidate_stack': json.loads(profile.stack),
+                       'years_experience': profile.years_experience,
+                       'profession': profession.name}
+            engine = InterviewEngine(provider, config=config, limits=limits, plan=plan,
+                                     candidate_context=context, clock=time.time,
+                                     approved_primary_questions=True)
+            engine.state.llm_provider = 'yandex'
+            now = time.time()
+            row = AISession(id=uuid4().hex, token_hash=hashlib.sha256(x_candidate_token.encode()).hexdigest(),
+                            model=provider.model, started=now, state=engine.state.model_dump_json(),
+                            trace='[]', candidate_id=profile.id, opportunity_id=None, archived=0)
+            engine.state.interview_id = row.id
+            row.state = engine.state.model_dump_json()
+            async with assessment_gate:
+                try:
+                    with database.session(write=True) as db:
+                        if daily_limit:
+                            if db.bind.dialect.name == 'postgresql':
+                                db.execute(text('SELECT pg_advisory_xact_lock(62714622)'))
+                            active_today = db.scalar(select(func.count()).select_from(GeneralAssessment).where(
+                                GeneralAssessment.created >= now - 86400))
+                            active_today += db.scalar(select(func.count()).select_from(CandidateAssessment).where(
+                                CandidateAssessment.created >= now - 86400))
+                            if active_today >= daily_limit:
+                                raise HTTPException(429, 'Дневной лимит интервью исчерпан. Повторите позже.')
+                        db.add(row)
+                        db.add(GeneralAssessment(candidate_id=profile.id, profession_id=profession.id,
+                                                 session_id=row.id,
+                                                 share_with_companies=int(body.share_with_companies),
+                                                 consent_at=now, created=now))
+                except IntegrityError:
+                    with database.session() as db:
+                        existing = db.get(GeneralAssessment, (profile.id, profession.id))
+                    if existing:
+                        return {'id': existing.session_id, 'token': x_candidate_token}
+                    raise
+            return {'id': row.id, 'token': x_candidate_token}
 
     @app.post('/api/ai/sessions')
     async def create_ai_session(body: SessionCreate,
@@ -191,7 +266,22 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
                 return {'id': previous.session_id, 'token': x_candidate_token}
             if not opportunity or opportunity.status != 'open' or not interested or not template:
                 raise HTTPException(409, 'Выберите опубликованную вакансию с утверждённым тестом.')
+            required_id = profession_id_for_name(json.loads(opportunity.stack)[0])
+            if required_id:
+                with database.session() as db:
+                    profession = db.get(Profession, required_id)
+                    general = db.get(GeneralAssessment, (profile.id, required_id))
+                    general_session = db.get(AISession, general.session_id) if general else None
+                if profession:
+                    if json.loads(profile.stack)[0].casefold() != profession.name.casefold():
+                        raise HTTPException(409, 'Для этой вакансии нужен профиль соответствующей профессии.')
+                    if not general_session or InterviewState.model_validate_json(general_session.state).phase != Phase.COMPLETED:
+                        raise HTTPException(409, 'Сначала завершите общее интервью по профессии.')
             plan = CompetencyPlan.model_validate_json(template.plan_json)
+            settings = InterviewSettings.model_validate_json(template.settings_json)
+            limits = Limits(max_questions=settings.max_questions,
+                            max_follow_ups_per_question=settings.max_follow_ups,
+                            time_budget_seconds=settings.duration_minutes * 60)
             try:
                 provider = create_llm_provider(provider='yandex', budget=YandexBudget(database))
             except ValueError as exc:
@@ -200,7 +290,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             context = {'candidate_level': profile.level, 'candidate_stack': json.loads(profile.stack),
                        'years_experience': profile.years_experience,
                        'vacancy_title': opportunity.title, 'vacancy_stack': json.loads(opportunity.stack)}
-            engine = InterviewEngine(provider, config=config, plan=plan,
+            engine = InterviewEngine(provider, config=config, limits=limits, plan=plan,
                                      candidate_context=context, clock=time.time,
                                      approved_primary_questions=True)
             engine.state.llm_provider = 'yandex'

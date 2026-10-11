@@ -166,7 +166,7 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
             };
             if(context.audioWorklet){
               // A worklet receives 128 samples per callback. Batch roughly 90 ms of audio.
-              const code="class MimasCapture extends AudioWorkletProcessor{constructor(){super();this.buffer=new Float32Array(4096);this.offset=0;this.port.onmessage=event=>{if(event.data?.type==='flush'){if(this.offset){const tail=this.buffer.subarray(0,this.offset);this.port.postMessage(tail,[this.buffer.buffer]);this.buffer=new Float32Array(4096);this.offset=0;}this.port.postMessage({type:'flushed'});}};}process(inputs){const channel=inputs[0]&&inputs[0][0];if(channel){let cursor=0;while(cursor<channel.length){const length=Math.min(channel.length-cursor,this.buffer.length-this.offset);this.buffer.set(channel.subarray(cursor,cursor+length),this.offset);this.offset+=length;cursor+=length;if(this.offset===this.buffer.length){this.port.postMessage(this.buffer,[this.buffer.buffer]);this.buffer=new Float32Array(4096);this.offset=0;}}}return true;}}registerProcessor('mimas-capture',MimasCapture);";
+              const code="class MimasCapture extends AudioWorkletProcessor{constructor(){super();this.buffer=new Float32Array(4096);this.offset=0;this.active=false;this.port.onmessage=event=>{if(event.data?.type==='start'){this.buffer=new Float32Array(4096);this.offset=0;this.active=true;}else if(event.data?.type==='flush'){this.active=false;if(this.offset){const tail=this.buffer.subarray(0,this.offset);this.port.postMessage(tail,[this.buffer.buffer]);this.buffer=new Float32Array(4096);this.offset=0;}this.port.postMessage({type:'flushed'});}};}process(inputs){const channel=inputs[0]&&inputs[0][0];if(channel&&this.active){let cursor=0;while(cursor<channel.length){const length=Math.min(channel.length-cursor,this.buffer.length-this.offset);this.buffer.set(channel.subarray(cursor,cursor+length),this.offset);this.offset+=length;cursor+=length;if(this.offset===this.buffer.length){this.port.postMessage(this.buffer,[this.buffer.buffer]);this.buffer=new Float32Array(4096);this.offset=0;}}}return true;}}registerProcessor('mimas-capture',MimasCapture);";
               const moduleUrl=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
               try{await context.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
               if(epoch!==generation.current)return;
@@ -279,6 +279,8 @@ export function useVoiceInterview(onSession:(session:Session)=>void){
     answerAllowed.current=false;
     current.send(JSON.stringify({type:'start_answer'}));
     sendingAudio.current=true;
+    const node=processor.current;
+    if(node&&'port' in node)node.port.postMessage({type:'start'});
     setError('');
     setPhase('candidate_speaking');
   },[phase]);

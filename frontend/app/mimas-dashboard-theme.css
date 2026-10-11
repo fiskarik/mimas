@@ -268,3 +268,22 @@
 @media (prefers-reduced-motion: reduce) {
   .market-quicklinks a { transition: none; }
 }
+
+.market--candidate .market-header .brand-word img{display:block;flex:0 0 auto;border-radius:9px}
+.market--candidate .market-intro-orbit img{display:block;border-radius:17px;filter:drop-shadow(0 7px 32px #d4f2b365)}
+@media(max-width:680px){.market--candidate .market-header .brand-word img{width:29px;height:29px}}
+
+.market--candidate .market-quicklinks{grid-template-columns:repeat(4,minmax(0,1fr))}
+.market-general-card{display:grid;grid-template-columns:minmax(210px,.72fr) minmax(0,1fr);gap:clamp(22px,3vw,44px);padding:clamp(22px,3vw,36px)}
+.market-general-card>div{min-width:0}
+.market-general-card>div:first-child{border-right:1px solid #9daf9b;padding-right:clamp(18px,3vw,40px)}
+.market-general-label{display:block;font-size:12px;font-weight:600;margin:0 0 10px}
+.market-general-profession{display:block;font:400 clamp(26px,3vw,40px)/1.1 Georgia,'Times New Roman',serif;letter-spacing:-.04em}
+.market-general-card p{font-size:13px;line-height:1.6;margin:15px 0 20px}
+.market-general-card h3{font:400 clamp(24px,2.6vw,36px)/1.15 Georgia,'Times New Roman',serif;letter-spacing:-.04em;margin:0}
+.market-general-card .primary,.market-general-card .secondary{margin-top:4px}
+.market-general-consent{margin-top:15px}
+.market-general-consent .market-consent{max-width:840px}
+.market-general-required{color:#8a4f17;font-size:13px;line-height:1.5;border-left:3px solid #a66c29;padding-left:12px;margin-top:18px}
+@media(max-width:900px){.market-general-card{grid-template-columns:1fr}.market-general-card>div:first-child{border-right:0;border-bottom:1px solid #9daf9b;padding:0 0 20px}}
+@media(max-width:680px){.market--candidate .market-quicklinks{grid-template-columns:repeat(2,minmax(0,1fr))}.market-general-card{padding:20px}.market-general-card .primary,.market-general-card .secondary{width:100%}}

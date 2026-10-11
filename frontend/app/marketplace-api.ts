@@ -1,9 +1,10 @@
 export type Level = 'junior'|'middle'|'senior';
 export type Profile = {id:string;name:string;role:string;level:Level;stack:string[];years_experience:number;github_url:string|null;desired_salary_rub:number|null;discoverable:boolean};
 export type Match = {score:number;reasons:string[];stack_overlap:number;level_match:boolean;salary_match:boolean;compatible:boolean};
-export type Opportunity = {id:string;company_name:string;title:string;description:string;role:string;level:Level;stack:string[];salary_min_rub:number|null;salary_max_rub:number|null;employment_type:'full_time'|'contract';status:string;template_status?:string;template_version?:string;match?:Match;interested?:boolean};
-export type AssessmentView = {opportunity_id:string;session_id?:string;id?:string;phase?:string;report?:unknown;status?:string};
-export type MyProfile = {profile:Profile;interested_opportunity_ids:string[];assessments?:AssessmentView[]|Record<string,AssessmentView>;assessment_opportunities?:Record<string,Pick<Opportunity,'id'|'title'|'company_name'|'status'>>;assessment?:{report?:unknown;phase?:string}|null};
+export type Profession = {id:string;name:string;description:string};
+export type Opportunity = {id:string;profession_id?:string|null;company_name:string;title:string;description:string;role:string;level:Level;stack:string[];salary_min_rub:number|null;salary_max_rub:number|null;employment_type:'full_time'|'contract';status:string;template_status?:string;template_version?:string;additional_required?:boolean;match?:Match;interested?:boolean};
+export type AssessmentView = {opportunity_id?:string;profession_id?:string;share_with_companies?:boolean;session_id?:string;id?:string;phase?:string;report?:unknown;status?:string};
+export type MyProfile = {profile:Profile;interested_opportunity_ids:string[];assessments?:AssessmentView[]|Record<string,AssessmentView>;assessment_opportunities?:Record<string,Pick<Opportunity,'id'|'title'|'company_name'|'status'>>;general_assessments?:Record<string,AssessmentView>;assessment?:{report?:unknown;phase?:string}|null};
 export type Evidence = {id:string;type:string;claim:string;quote:string;question_text:string};
 export type CandidateResult = {profile:Profile;assessment_id:string;opportunity_id?:string;status?:string;summary:string|null;skills:{skill:string;demonstrated_level:string|null;status:string;answers_received:number;evaluated_answers:number;evidence:Evidence[]}[];quality_status?:string;match?:Match;interested?:boolean};
 

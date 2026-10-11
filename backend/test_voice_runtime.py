@@ -297,6 +297,8 @@ def test_yandex_null_commit_id_still_saves_transcript(monkeypatch):
     sent_types = [event['type'] for event in upstreams[0].sent]
     assert sent_types.index('input_audio_buffer.commit') < sent_types.index('response.create')
     assert sent_types.count('response.create') == 1
+    assert any(event['type'] == 'conversation.item.delete'
+               and event['item_id'] == 'spoken-1' for event in upstreams[0].sent)
 
 
 @pytest.mark.parametrize('delay', [0, 0.12])
@@ -312,12 +314,14 @@ def test_push_to_talk_keeps_pauses_and_submits_once_on_release(monkeypatch, dela
             _start_voice(ws, question)
             frame = base64.b64encode(b'\x01\x00' * 100).decode()
             ws.send_json({'type': 'start_answer'})
+            ws.send_json({'type': 'start_answer'})  # Duplicate press must not open a second turn.
             ws.send_json({'type': 'audio', 'audio': frame})
             time.sleep(0.15)  # Longer than the former automatic VAD flush.
             ws.send_json({'type': 'audio', 'audio': frame})
             time.sleep(0.15)
             assert not submitted
             ws.send_json({'type': 'finish_answer'})
+            ws.send_json({'type': 'finish_answer'})  # Pointer-up and key-up can race.
             assert ws.receive_json() == {'type': 'transcript', 'speaker': 'candidate',
                                          'text': complete_answer}
             assert ws.receive_json()['type'] == 'state'

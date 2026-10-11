@@ -1,10 +1,11 @@
 'use client';
 
 import {useCallback,useEffect,useState} from 'react';
+import Image from 'next/image';
 import {ArrowLeft,ArrowRight,BriefcaseBusiness,CheckCircle2,Loader2,ShieldCheck,Video} from 'lucide-react';
 import AIDemo from './ai-demo';
 import type {Access} from './ai-session';
-import {assessmentFor,levelLabels,market,MarketError,salaryRange,type Level,type MyProfile,type Opportunity} from './marketplace-api';
+import {assessmentFor,levelLabels,market,MarketError,salaryRange,type Level,type MyProfile,type Opportunity,type Profession} from './marketplace-api';
 
 function mediaError(error:unknown):Error{
   const name=error instanceof DOMException?error.name:'';
@@ -19,13 +20,18 @@ export function CandidateHub(){
   const [loaded,setLoaded]=useState(false);
   const [me,setMe]=useState<MyProfile|null>(null);
   const [jobs,setJobs]=useState<Opportunity[]>([]);
+  const [professions,setProfessions]=useState<Profession[]>([]);
   const [access,setAccess]=useState<Access|null>(null);
   const [activeJob,setActiveJob]=useState<Pick<Opportunity,'id'|'title'|'company_name'>|null>(null);
+  const [activeGeneral,setActiveGeneral]=useState<Profession|null>(null);
   const [stream,setStream]=useState<MediaStream|null>(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [consentJob,setConsentJob]=useState<Pick<Opportunity,'id'|'title'|'company_name'>|null>(null);
   const [consent,setConsent]=useState(false);
+  const [consentProfession,setConsentProfession]=useState<Profession|null>(null);
+  const [generalRecordingConsent,setGeneralRecordingConsent]=useState(false);
+  const [generalShareConsent,setGeneralShareConsent]=useState(false);
   const [name,setName]=useState('');
   const [level,setLevel]=useState<Level>('middle');
   const [stack,setStack]=useState('Сварщик, ручная дуговая сварка, чтение чертежей');
@@ -33,8 +39,8 @@ export function CandidateHub(){
   const [salaryWish,setSalaryWish]=useState('');
   useEffect(()=>{setToken(localStorage.getItem('mimas-candidate-token')||'');setLoaded(true);},[]);
   const refresh=useCallback(async(auth:string)=>{
-    const [profile,items]=await Promise.all([market<MyProfile>('/me',{token:auth}),market<Opportunity[]>('/opportunities',{token:auth})]);
-    setMe(profile);setJobs(items);
+    const [profile,items,catalog]=await Promise.all([market<MyProfile>('/me',{token:auth}),market<Opportunity[]>('/opportunities',{token:auth}),market<Profession[]>('/professions')]);
+    setMe(profile);setJobs(items);setProfessions(catalog);
   },[]);
   useEffect(()=>{if(token)void refresh(token).catch(e=>{
     if(e instanceof MarketError&&e.status===401){localStorage.removeItem('mimas-candidate-token');setToken('');setMe(null);setJobs([]);setError('Профиль недоступен. Создайте новый.');}
@@ -70,25 +76,55 @@ export function CandidateHub(){
       const response=await fetch('/api/ai/sessions',{method:'POST',headers:{'X-Candidate-Token':token,'Content-Type':'application/json'},body:JSON.stringify({opportunity_id:job.id,consent:true}),cache:'no-store'});
       const body=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:'Не удалось открыть интервью.');
-      setStream(camera);setActiveJob(job);setAccess(body as Access);setConsentJob(null);setConsent(false);
+      setStream(camera);setActiveJob(job);setActiveGeneral(null);setAccess(body as Access);setConsentJob(null);setConsent(false);
     }catch(e){camera?.getTracks().forEach(track=>track.stop());setError((e as Error).message);}finally{setBusy(false);}
   }
+  async function openGeneralInterview(profession:Profession,finished=false){
+    if(!finished&&!generalRecordingConsent){setError('Подтвердите согласие на запись перед общим интервью.');return;}
+    setBusy(true);setError('');
+    let camera:MediaStream|null=null;
+    try{
+      if(!finished){
+        if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для голосового интервью нужен браузер с доступом к камере и микрофону.');
+        try{camera=await navigator.mediaDevices.getUserMedia({
+          video:{facingMode:'user'},
+          audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
+        });}catch(error){throw mediaError(error);}
+        if(!camera.getVideoTracks().some(track=>track.readyState==='live'))throw new Error('Камера не подключена. Проверьте устройство и повторите попытку.');
+        if(!camera.getAudioTracks().some(track=>track.readyState==='live'))throw new Error('Микрофон не подключён. Проверьте устройство и повторите попытку.');
+      }
+      const response=await fetch('/api/ai/general-sessions',{method:'POST',headers:{'X-Candidate-Token':token,'Content-Type':'application/json'},body:JSON.stringify({profession_id:profession.id,consent:true,share_with_companies:finished?Boolean(generalAssessment?.share_with_companies):generalShareConsent}),cache:'no-store'});
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:'Не удалось открыть общее интервью.');
+      setStream(camera);setActiveGeneral(profession);setActiveJob(null);setAccess(body as Access);
+      setConsentProfession(null);setGeneralRecordingConsent(false);setGeneralShareConsent(false);
+    }catch(e){camera?.getTracks().forEach(track=>track.stop());setError((e as Error).message);}finally{setBusy(false);}
+  }
+  async function changeGeneralSharing(professionId:string,share:boolean){
+    setBusy(true);setError('');
+    try{await market('/me/general-sharing',{method:'PATCH',token,body:{profession_id:professionId,share_with_companies:share}});await refresh(token);}
+    catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }
   function leaveInterview(){
-    stream?.getTracks().forEach(track=>track.stop());setStream(null);setAccess(null);setActiveJob(null);
+    stream?.getTracks().forEach(track=>track.stop());setStream(null);setAccess(null);setActiveJob(null);setActiveGeneral(null);
     void refresh(token).catch(e=>setError((e as Error).message));
   }
   function logout(){
     stream?.getTracks().forEach(track=>track.stop());localStorage.removeItem('mimas-candidate-token');
-    setToken('');setMe(null);setJobs([]);setAccess(null);setActiveJob(null);
+    setToken('');setMe(null);setJobs([]);setAccess(null);setActiveJob(null);setActiveGeneral(null);setProfessions([]);
   }
+  const selectedProfession=professions.find(item=>item.name.toLocaleLowerCase('ru-RU')===me?.profile.role?.toLocaleLowerCase('ru-RU'))||null;
+  const profileProfessionId=selectedProfession?.id||null;
+  const generalAssessment=selectedProfession?me?.general_assessments?.[selectedProfession.id]:null;
+  const generalDone=Boolean(generalAssessment?.report);
   const historical=me?.assessments&&!Array.isArray(me.assessments)?Object.entries(me.assessments).filter(([id])=>!jobs.some(job=>job.id===id)):[];
-  if(access)return <AIDemo linkedAccess={access} linkedOpportunity={activeJob?{title:activeJob.title,company_name:activeJob.company_name}:undefined} mediaStream={stream||undefined} onExit={leaveInterview}/>;
+  if(access)return <AIDemo linkedAccess={access} interviewKind={activeGeneral?'general':'additional'} linkedOpportunity={activeGeneral?{title:'Общее интервью · '+activeGeneral.name,company_name:'Профессиональный профиль'}:activeJob?{title:activeJob.title,company_name:activeJob.company_name}:undefined} mediaStream={stream||undefined} onExit={leaveInterview}/>;
   return <div className="market market--candidate">
-    <header className="market-header"><a href="/" className="brand-word">mimas.</a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=employer" className="text-link">Для компаний <ArrowRight size={16}/></a></nav></header>
-    <main className="market-main"><section className="market-intro" aria-labelledby="candidate-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1 id="candidate-intro-title">Расскажите, как вы <em>работаете.</em></h1><p>Выберите вакансию сварщика, электрика, слесаря или токаря. Голосовое интервью проверит профессиональные знания и решения рабочих ситуаций.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit">m.</span><span className="market-intro-signal">СЛУШАЮ · ДУМАЮ · ОТВЕЧАЮ</span></div></section>
-    <nav className="market-quicklinks" aria-label="Этапы для кандидата"><a href="#candidate-profile">01 · Профиль</a><a href="#candidate-opportunities">02 · Вакансии</a><a href={consentJob ? "#candidate-interview" : "#candidate-opportunities"}>03 · Интервью</a></nav><div className="market-board">
+    <header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><Image src="/icon.svg" alt="" width={36} height={36}/>mimas.</a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=employer" className="text-link">Для компаний <ArrowRight size={16}/></a></nav></header>
+    <main className="market-main"><section className="market-intro" aria-labelledby="candidate-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1 id="candidate-intro-title">Расскажите, как вы <em>работаете.</em></h1><p>Начните с общего интервью по профессии, затем выберите вакансию. Компания сможет задать дополнительные вопросы по своим рабочим задачам.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit"><Image src="/icon.svg" alt="" width={74} height={74}/></span><span className="market-intro-signal">СЛУШАЮ · ДУМАЮ · ОТВЕЧАЮ</span></div></section>
+    <nav className="market-quicklinks" aria-label="Этапы для кандидата"><a href="#candidate-profile">01 · Профиль</a><a href="#candidate-general">02 · Общее интервью</a><a href="#candidate-opportunities">03 · Вакансии</a><a href={consentJob ? "#candidate-interview" : "#candidate-opportunities"}>04 · Дополнительное</a></nav><div className="market-board">
       {error&&<div role="alert" className="error-box">{error}</div>}
-      {!loaded?<p>Загрузка…</p>:!token?<section className="card market-form" id="candidate-profile"><h2>Профиль специалиста</h2><p className="note">Укажите профессию первым пунктом, затем навыки через запятую. Доступ к профилю хранится в этом браузере.</p>
+      {!loaded?<p>Загрузка…</p>:!token?<section className="card market-form" id="candidate-profile"><h2>Профиль специалиста</h2><p className="note">Для общего интервью укажите первым пунктом одну из профессий пилота: Сварщик, Электрик, Слесарь или Токарь. Затем перечислите навыки через запятую. Доступ к профилю хранится в этом браузере.</p>
         <form onSubmit={register}><label>Имя или псевдоним<input required minLength={2} maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></label>
           <div className="market-fields"><label>Уровень опыта<select value={level} onChange={e=>setLevel(e.target.value as Level)}><option value="junior">{levelLabels.junior}</option><option value="middle">{levelLabels.middle}</option><option value="senior">{levelLabels.senior}</option></select></label><label>Опыт, лет<input type="number" min="0" max="60" step="0.5" value={years} onChange={e=>setYears(e.target.value)}/></label></div>
           <label>Профессия и навыки через запятую<input required value={stack} onChange={e=>setStack(e.target.value)} placeholder="Сварщик, ручная дуговая сварка, чтение чертежей"/></label>
@@ -96,19 +132,46 @@ export function CandidateHub(){
           <button className="primary" disabled={busy}>{busy?<Loader2 className="spin" size={17}/>:<ArrowRight size={17}/>} Найти вакансии</button></form>
       </section>:!me?<p>Загружаем профиль…</p>:<>
         <section className="card market-profile" id="candidate-profile"><div><span className="eyebrow">ВАШ ПРОФИЛЬ</span><h2>{me.profile.name}</h2><p className="muted">{me.profile.role||me.profile.stack[0]||'Специалист'} · {levelLabels[me.profile.level]} · опыт: {me.profile.years_experience} лет</p><div className="tags">{me.profile.stack.map(item=><span key={item}>{item}</span>)}</div></div><button className="secondary" onClick={logout}>Выйти из профиля</button></section>
-        <section className="market-section" id="candidate-opportunities"><div className="market-heading"><div><span className="eyebrow">01 / ВАКАНСИИ</span><h2>Что вам подходит</h2></div><span className="badge">{jobs.filter(item=>item.match?.compatible).length} подходят из {jobs.length}</span></div>
+        <section className="market-section market-general" id="candidate-general">
+          <div className="market-heading"><div><span className="eyebrow">01 / ОБЩЕЕ ИНТЕРВЬЮ</span><h2>Начните с профессии</h2></div><span className={generalDone?'badge green':'badge'}>{generalDone?'Отчёт готов':generalAssessment?'Интервью начато':'Первый этап'}</span></div>
+          <div className="card market-general-card">
+            <div><span className="market-general-label">Профессия в вашем профиле</span><strong className="market-general-profession">{me.profile.role}</strong><p className="muted">{selectedProfession?.description||'Для этой профессии пока нет общего интервью. В пилоте доступны сварщик, электрик, слесарь и токарь. Укажите одну из этих профессий первым навыком в новом профиле.'}</p></div>
+            <div><h3>Один разговор — общая основа</h3><p className="muted">MIMAS задаст вопросы по профессии и составит отчёт на основе ваших устных ответов. После этого можно пройти дополнительные вопросы по конкретной вакансии. Практические навыки и допуск проверяются отдельно.</p>
+              {selectedProfession&&(generalDone
+                ?<button className="secondary" disabled={busy} onClick={()=>void openGeneralInterview(selectedProfession,true)}>Открыть общий отчёт <ArrowRight size={16}/></button>
+                :<button className="primary" disabled={busy} onClick={()=>{setConsentProfession(selectedProfession);setConsentJob(null);setGeneralRecordingConsent(false);setGeneralShareConsent(false);}}>{generalAssessment?'Продолжить общее интервью':'Начать общее интервью'} <ArrowRight size={16}/></button>)}
+              {selectedProfession&&generalAssessment&&<label className="market-consent"><input type="checkbox" disabled={busy} checked={Boolean(generalAssessment.share_with_companies)} onChange={event=>void changeGeneralSharing(selectedProfession.id,event.target.checked)}/> Показывать мой предварительный рейтинг одобренным компаниям</label>}
+            </div>
+          </div>
+          {consentProfession&&<div className="card market-assessment market-general-consent" aria-labelledby="general-consent-title">
+            <span className="eyebrow">ПЕРЕД ОБЩИМ ИНТЕРВЬЮ</span><h2 id="general-consent-title">{consentProfession.name}</h2>
+            <p className="muted">Для разговора нужны камера и микрофон. MIMAS сохранит ответы и видео, а оценка будет предварительной. Подробное согласие на проверку событий браузера появится перед первым вопросом; расширение Chrome/Edge необязательно.</p>
+            <label className="market-consent"><input type="checkbox" checked={generalRecordingConsent} onChange={event=>setGeneralRecordingConsent(event.target.checked)}/> Я согласен(на) на запись общего интервью и обработку моих ответов.</label>
+            <label className="market-consent"><input type="checkbox" checked={generalShareConsent} onChange={event=>setGeneralShareConsent(event.target.checked)}/> Я разрешаю показывать мой общий рейтинг и краткий отчёт одобренным компаниям. Это необязательно, настройку можно изменить позже. Видео доступно только мне.</label>
+            <div className="button-row"><button className="primary" disabled={busy||!generalRecordingConsent} onClick={()=>void openGeneralInterview(consentProfession)}>{busy?<Loader2 size={17} className="spin"/>:<Video size={17}/>} Разрешить камеру и продолжить</button><button className="secondary" disabled={busy} onClick={()=>setConsentProfession(null)}>Отмена</button></div>
+          </div>}
+        </section>
+        <section className="market-section" id="candidate-opportunities"><div className="market-heading"><div><span className="eyebrow">02 / ВАКАНСИИ</span><h2>Что вам подходит</h2></div><span className="badge">{jobs.filter(item=>item.match?.compatible).length} подходят из {jobs.length}</span></div>
           {jobs.length===0?<div className="card market-empty"><BriefcaseBusiness size={26}/><h3>Пока нет вакансий с утверждённым интервью</h3><p className="muted">Новые вакансии появятся здесь после проверки вопросов работодателем.</p></div>:<div className="market-list">{jobs.map(job=>{
             const assessment=assessmentFor(me,job.id);
             const done=Boolean(assessment?.report);
             const interested=Boolean(job.interested||me.interested_opportunity_ids.includes(job.id));
-            return <article className="card market-opportunity" key={job.id}><div className="market-item-top"><span className="eyebrow">{job.company_name}</span><div className="market-statuses"><span className="badge">{job.employment_type==='contract'?'Проектная работа':'Полная занятость'}</span><span className={job.match?.compatible?'badge green':'badge'}>{job.match?.compatible?'Подходит':'Проверьте условия'}</span></div></div>
+            const professionMismatch=Boolean(job.profession_id&&job.profession_id!==profileProfessionId&&!assessment);
+            const needsGeneral=Boolean(job.profession_id&&job.profession_id===profileProfessionId&&!me.general_assessments?.[job.profession_id]?.report&&!assessment);
+            const jobProfession=professions.find(item=>item.id===job.profession_id);
+            return <article className="card market-opportunity" key={job.id}><div className="market-item-top"><span className="eyebrow">{job.company_name}</span><div className="market-statuses"><span className="badge">{job.additional_required===false?'Общего интервью достаточно':'Дополнительный этап'}</span><span className="badge">{job.employment_type==='contract'?'Проектная работа':'Полная занятость'}</span><span className={job.match?.compatible?'badge green':'badge'}>{job.match?.compatible?'Подходит':'Проверьте условия'}</span></div></div>
               <h3>{job.title}</h3><p className="muted">{job.description}</p><p><strong>{salaryRange(job.salary_min_rub,job.salary_max_rub)}</strong> · {levelLabels[job.level]}</p><div className="tags">{job.stack.map(value=><span key={value}>{value}</span>)}</div><p className="market-reasons">{job.match?.reasons.join(' · ')}</p>
-              {!interested?<button className="primary" disabled={busy} onClick={()=>void select(job)}>Выбрать вакансию <ArrowRight size={16}/></button>:done?<button className="secondary" disabled={busy} onClick={()=>void openInterview(job,true)}>Открыть мой отчёт <ArrowRight size={16}/></button>:<button className="primary" disabled={busy} onClick={()=>{setConsentJob(job);setConsent(false);}}>{assessment?'Продолжить интервью':'Начать интервью'} <ArrowRight size={16}/></button>}
+              {!interested?<button className="primary" disabled={busy} onClick={()=>void select(job)}>Выбрать вакансию <ArrowRight size={16}/></button>
+                :done?<button className="secondary" disabled={busy} onClick={()=>void openInterview(job,true)}>Открыть мой отчёт <ArrowRight size={16}/></button>
+                :professionMismatch?<p className="market-general-required">Для дополнительного интервью нужен профиль «{jobProfession?.name||'эта профессия'}». Сейчас в профиле указана другая профессия.</p>
+                :needsGeneral&&jobProfession?<button className="secondary" disabled={busy} onClick={()=>{setConsentProfession(jobProfession);setConsentJob(null);setGeneralRecordingConsent(false);setGeneralShareConsent(false);document.getElementById('candidate-general')?.scrollIntoView({behavior:'smooth'});}}>Сначала общее интервью <ArrowRight size={16}/></button>
+                :job.additional_required===false?<p className="market-general-required">Вакансия выбрана. Дополнительных вопросов нет. {generalAssessment?.share_with_companies?'Ваш общий результат доступен одобренным компаниям.':'Чтобы компания увидела общий результат, разрешите показ предварительного рейтинга выше.'}</p>
+                :<button className="primary" disabled={busy} onClick={()=>{setConsentJob(job);setConsentProfession(null);setConsent(false);}}>{assessment?'Продолжить дополнительное интервью':'Начать дополнительное интервью'} <ArrowRight size={16}/></button>}
             </article>;
           })}</div>}
         </section>
-        {historical.length>0&&<section className="market-section"><div className="market-heading"><div><span className="eyebrow">02 / ИСТОРИЯ</span><h2>Мои прежние интервью</h2></div></div><div className="market-list">{historical.map(([id,assessment])=>{const past=me.assessment_opportunities?.[id]||{id,title:'Вакансия больше не опубликована',company_name:'Компания',status:'closed'};const done=Boolean(assessment.report||assessment.phase==='COMPLETED'||assessment.status==='completed');return <article className="card market-opportunity" key={id}><span className="eyebrow">{past.company_name}</span><h3>{past.title}</h3><span className="badge">{past.status==='closed'?'Вакансия закрыта':'Вакансия недоступна'}</span><p className="muted">Ваше интервью и отчёт сохраняются даже после закрытия вакансии.</p>{done?<button className="secondary" disabled={busy} onClick={()=>void openInterview(past,true)}>Открыть отчёт <ArrowRight size={16}/></button>:<button className="secondary" disabled={busy} onClick={()=>{setConsentJob(past);setConsent(false);}}>Продолжить интервью <ArrowRight size={16}/></button>}</article>;})}</div></section>}
-        {consentJob&&<section className="card market-assessment" id="candidate-interview" aria-labelledby="market-consent-title"><span className="eyebrow">02 / ПЕРЕД ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS запросит доступ к камере и микрофону, запишет видео и ответы, передаст их для AI-оценки. Для голосового интервью нужны работающие камера и микрофон. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек. Интервью проверяет знания и решения рабочих ситуаций, но не подтверждает практический навык или допуск к работе. Перед первым вопросом MIMAS отдельно запросит согласие на наблюдение за событиями браузера. На Windows отдельная программа не нужна. Расширение Chrome/Edge для проверки известных вкладок можно подключить по желанию.</p>
+        {historical.length>0&&<section className="market-section"><div className="market-heading"><div><span className="eyebrow">03 / ИСТОРИЯ</span><h2>Мои прежние интервью</h2></div></div><div className="market-list">{historical.map(([id,assessment])=>{const past=me.assessment_opportunities?.[id]||{id,title:'Вакансия больше не опубликована',company_name:'Компания',status:'closed'};const done=Boolean(assessment.report||assessment.phase==='COMPLETED'||assessment.status==='completed');return <article className="card market-opportunity" key={id}><span className="eyebrow">{past.company_name}</span><h3>{past.title}</h3><span className="badge">{past.status==='closed'?'Вакансия закрыта':'Вакансия недоступна'}</span><p className="muted">Ваше интервью и отчёт сохраняются даже после закрытия вакансии.</p>{done?<button className="secondary" disabled={busy} onClick={()=>void openInterview(past,true)}>Открыть отчёт <ArrowRight size={16}/></button>:<button className="secondary" disabled={busy} onClick={()=>{setConsentJob(past);setConsent(false);}}>Продолжить интервью <ArrowRight size={16}/></button>}</article>;})}</div></section>}
+        {consentJob&&<section className="card market-assessment" id="candidate-interview" aria-labelledby="market-consent-title"><span className="eyebrow">04 / ДОПОЛНИТЕЛЬНОЕ ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS запросит доступ к камере и микрофону, запишет видео и ответы, передаст их для AI-оценки. Для голосового интервью нужны работающие камера и микрофон. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек. Интервью проверяет знания и решения рабочих ситуаций, но не подтверждает практический навык или допуск к работе. Перед первым вопросом MIMAS отдельно запросит согласие на наблюдение за событиями браузера. На Windows отдельная программа не нужна. Расширение Chrome/Edge для проверки известных вкладок можно подключить по желанию.</p>
           <label className="market-consent"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/> Я согласен(на) на запись интервью и передачу результата этой компании.</label>
           <div className="button-row"><button className="primary" disabled={busy||!consent} onClick={()=>void openInterview(consentJob)}>{busy?<Loader2 size={17} className="spin"/>:<Video size={17}/>} Разрешить камеру и продолжить</button><button className="secondary" disabled={busy} onClick={()=>setConsentJob(null)}>Отмена</button></div>
           <p className="tiny muted">Если камера или микрофон недоступны, интервью не начнётся. Проверьте разрешения браузера и повторите попытку.</p>

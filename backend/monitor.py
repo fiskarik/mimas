@@ -201,8 +201,10 @@ def _require_feature():
 
 
 def _candidate(db, iid: str, token: str | None, *, active=False) -> AISession:
+    from backend.general_interview import GeneralAssessment
     row = db.get(AISession, iid)
-    if not row or not row.candidate_id or not row.opportunity_id or not token or not secrets.compare_digest(
+    general = db.scalar(select(GeneralAssessment).where(GeneralAssessment.session_id == iid)) if row else None
+    if not row or not row.candidate_id or not (row.opportunity_id or general) or not token or not secrets.compare_digest(
             row.token_hash, _digest(token)):
         raise HTTPException(401, 'Интервью недоступно')
     if active and (row.archived or json.loads(row.state).get('phase') == 'COMPLETED'):

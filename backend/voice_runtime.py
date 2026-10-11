@@ -595,6 +595,10 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             if len(transcript) > 16000:
                                 raise VoiceProtocolError('Ответ слишком длинный. Подключитесь заново и повторите его короче.')
                             listening = False
+                            # The provider can acknowledge a commit with item_id=null.
+                            # Retire the ID from the transcript itself so the previous
+                            # answer cannot leak into recognition of the next turn.
+                            await retire_stt_item(item_id)
                             await send({'type': 'transcript', 'speaker': 'candidate', 'text': transcript})
                             try:
                                 result = await submit_answer(

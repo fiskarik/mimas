@@ -11,6 +11,7 @@ from sqlalchemy import select
 from backend.database import Database, Interview, AnswerRecord, IntegrityEvent, RecordingChunk, as_dict
 from backend.companies import company_from_key, ensure_legacy_company, register_company_routes
 from backend.marketplace import register_marketplace_routes
+from backend.general_interview import ensure_professions
 from backend.ai_web import register_ai_routes
 from backend.media import register_video_routes
 from backend.monitor import register_monitor_routes
@@ -28,6 +29,7 @@ app = FastAPI(title='MIMAS', version='0.3.0')
 def setup_legacy_company():
     # The startup script applies Alembic migrations before the API loads.
     ensure_legacy_company(database, COMPANY_KEY)
+    ensure_professions(database)
 
 @app.middleware('http')
 async def no_store_api(request: Request, call_next):

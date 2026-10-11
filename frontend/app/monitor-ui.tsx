@@ -112,30 +112,30 @@ function ConnectionLine({label,component,code,busy,onPair}:{
     {code&&!component.online&&<div className="monitor-code"><code>{code.code}</code><button type="button" className="secondary" onClick={()=>void copyCode()}><Copy size={14}/>{copied?'Скопировано':'Копировать'}</button><span className="tiny muted">Код действует до {readableTime(code.expires_at)}. Вставьте его только в {label.toLowerCase()}.</span></div>}
   </div>;
 }
-export function CandidateMonitorPanel({monitor,phase}:{monitor:CandidateMonitor;phase:string|undefined}){
+export function CandidateMonitorPanel({monitor,kind='additional'}:{monitor:CandidateMonitor;kind?:'general'|'additional'}){
   const {status,error,busy,codes,refresh,consent,pair}=monitor;
   const [accepted,setAccepted]=useState(false);
-  const [dismissed,setDismissed]=useState<string|null>(null);
   if(!status&&!error)return <p className="tiny muted">Проверяем настройки наблюдения…</p>;
   if(!status&&error)return <section className="card monitor-panel"><p role="alert" className="warning">{error}</p><button type="button" className="secondary" onClick={()=>void refresh()}><RefreshCw size={15}/> Повторить проверку</button></section>;
   if(!status?.enabled)return null;
-  const preparing=phase==='CREATED';
-  const observations=[...status.observations].sort((a,b)=>timeValue(b.observed_at)-timeValue(a.observed_at));
-  const recent=observations.slice(0,3);
-  const latestAlert=observations.find(item=>item.state==='detected'&&timeValue(item.observed_at)>Date.now()-120000);
-  const disconnected=status.consented&&status.components.extension.paired&&!status.components.extension.online&&phase!=='CREATED'&&phase!=='COMPLETED';
-  return <><section className="card monitor-panel" aria-label="Проверка среды интервью">
-    <div className="section-top"><div><span className="eyebrow">ПРОВЕРКА СРЕДЫ</span><h2>{preparing?'Согласие перед интервью':'Наблюдение во время интервью'}</h2></div><ShieldAlert size={22}/></div>
+  return <section className="card monitor-panel" aria-label="Согласие на проверку среды">
+    <div className="section-top"><div><span className="eyebrow">ПРОВЕРКА СРЕДЫ</span><h2>Согласие перед интервью</h2></div><ShieldAlert size={22}/></div>
     <p className="muted">Страница отмечает уход из окна интервью, но не видит названия других программ. Необязательное расширение Chrome/Edge проверяет вкладки с известными помощниками и передаёт только совпадения. Список программ, адреса остальных вкладок, скриншоты и содержимое окон не передаются. Предупреждение не снижает оценку и не означает отказа.</p>
-    {!status.consented?<div className="monitor-consent"><label className="market-consent"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> Я согласен(на) на проверку во время интервью и передачу совпадений компании по этой вакансии.</label><button type="button" className="primary" disabled={!accepted||busy} onClick={()=>void consent()}>Подтвердить проверку</button></div>
+    {!status.consented?<div className="monitor-consent"><label className="market-consent"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> {kind==='general'?'Я согласен(на) на проверку во время общего интервью. Совпадения могут войти в общий отчёт для одобренных компаний.':'Я согласен(на) на проверку во время интервью и передачу совпадений компании по этой вакансии.'}</label><button type="button" className="primary" disabled={!accepted||busy} onClick={()=>void consent()}>Подтвердить проверку</button></div>
       :<><p className="note"><CheckCircle2 size={16}/> Согласие подтверждено. Можно начать интервью без дополнительных программ и расширений.</p>
         <p className="tiny muted">Если хотите проверить вкладки известных помощников, установите расширение Chrome/Edge из пакета команды MIMAS, выберите адрес интервью и введите одноразовый код. Это необязательно: отсутствие расширения не мешает интервью и не влияет на оценку.</p>
         <ConnectionLine label="Расширение Chrome/Edge (необязательно)" component={status.components.extension} code={codes.extension} busy={busy} onPair={()=>void pair('extension')}/>
       </>}
-    {disconnected&&<p role="alert" className="warning">Расширение потеряло связь. Интервью продолжается, оценка не меняется. При желании подключите расширение снова.</p>}
-    {recent.length>0&&<div className="monitor-observations"><strong>Наблюдения</strong>{recent.map(item=><p key={item.id} role="alert" className="warning">{observationText(item)} <span className="tiny">{readableTime(item.observed_at)}</span></p>)}<p className="tiny muted">Если совпадение ошибочное, сообщите об этом работодателю. Окончательное решение принимает человек.</p></div>}
     {error&&<p role="alert" className="error-box">{error}</p>}
-  </section>{latestAlert&&latestAlert.id!==dismissed&&<div className="monitor-toast" role="alert"><ShieldAlert size={18}/><span>{observationText(latestAlert)} Совпадение не влияет автоматически на оценку.</span><button type="button" aria-label="Закрыть предупреждение" onClick={()=>setDismissed(latestAlert.id)}>×</button></div>}</>;
+  </section>;
+}
+
+export function CandidateMonitorAlerts({monitor}:{monitor:CandidateMonitor}){
+  const [dismissed,setDismissed]=useState<string|null>(null);
+  const observations=[...(monitor.status?.observations||[])].sort((a,b)=>timeValue(b.observed_at)-timeValue(a.observed_at));
+  const latestAlert=observations.find(item=>item.state==='detected'&&timeValue(item.observed_at)>Date.now()-120000);
+  if(!latestAlert||latestAlert.id===dismissed)return null;
+  return <div className="monitor-toast" role="alert"><ShieldAlert size={18}/><span>{observationText(latestAlert)} Совпадение не влияет автоматически на оценку.</span><button type="button" aria-label="Закрыть предупреждение" onClick={()=>setDismissed(latestAlert.id)}>×</button></div>;
 }
 type MonitorSummary={product_id:string|null;product_name:string|null;kind:string;detected_count:number};
 export function EmployerMonitorReport({sessionId,companyKey}:{sessionId:string;companyKey:string}){

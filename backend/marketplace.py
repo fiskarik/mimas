@@ -22,6 +22,7 @@ from ai_core.llm.base import ProviderError
 from ai_core.llm.factory import create_llm_provider
 from backend.companies import company_from_key
 from backend.database import Base, Database
+from backend.general_interview import GeneralAssessment, Profession, profession_id_for_name, profession_view, provisional_rating
 from backend.yandex_budget import BudgetExceeded, YandexBudget
 
 
@@ -76,6 +77,9 @@ class VacancyTemplate(Base):
     version: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(Text, default='draft', server_default='draft')
     plan_json: Mapped[str] = mapped_column(Text)
+    settings_json: Mapped[str] = mapped_column(
+        Text, default='{"max_questions":8,"max_follow_ups":1,"duration_minutes":20}',
+        server_default='{"max_questions":8,"max_follow_ups":1,"duration_minutes":20}')
     created: Mapped[float] = mapped_column(Float)
     approved: Mapped[float | None] = mapped_column(Float)
 
@@ -147,6 +151,11 @@ class Visibility(BaseModel):
     discoverable: bool
 
 
+class GeneralSharing(BaseModel):
+    profession_id: str
+    share_with_companies: bool
+
+
 class OpportunityStatus(BaseModel):
     status: Literal['open', 'closed']
 
@@ -165,6 +174,20 @@ class OpportunityCreate(BaseModel):
     @classmethod
     def stack_not_blank(cls, values):
         return clean_stack(values)
+
+
+
+class InterviewSettings(BaseModel):
+    """Company-controlled limits, frozen with each approved template version."""
+
+    max_questions: int = Field(default=8, ge=1, le=20)
+    max_follow_ups: int = Field(default=1, ge=0, le=2)
+    duration_minutes: int = Field(default=20, ge=5, le=20)
+
+
+class TemplateDraftUpdate(BaseModel):
+    plan: dict
+    settings: InterviewSettings | None = None
 
 
 def candidate_from_token(database: Database, token: str | None) -> CandidateProfile:
@@ -190,9 +213,12 @@ def profile_view(row: CandidateProfile) -> dict:
 
 
 def opportunity_view(row: Opportunity) -> dict:
+    stack = json.loads(row.stack)
+    profession_id = profession_id_for_name(stack[0]) if stack else None
     return {'id': row.id, 'company_name': row.company_name, 'title': row.title,
+            'profession_id': profession_id,
             'description': row.description, 'role': row.title,
-            'level': row.level, 'stack': json.loads(row.stack),
+            'level': row.level, 'stack': stack,
             'salary_min_rub': row.salary_min_rub, 'salary_max_rub': row.salary_max_rub,
             'employment_type': row.employment_type, 'status': row.status}
 
@@ -200,6 +226,7 @@ def opportunity_view(row: Opportunity) -> dict:
 def template_view(row: VacancyTemplate) -> dict:
     return {'id': row.id, 'opportunity_id': row.opportunity_id, 'version': row.version,
             'status': row.status, 'plan': json.loads(row.plan_json),
+            'settings': InterviewSettings.model_validate_json(row.settings_json).model_dump(),
             'created': row.created, 'approved': row.approved}
 
 
@@ -318,6 +345,12 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
     if daily_limit < 0:
         raise ValueError('MIMAS_MAX_CANDIDATES_PER_DAY must be nonnegative')
 
+    @app.get('/api/market/professions')
+    def list_professions():
+        with database.session() as db:
+            rows = list(db.scalars(select(Profession).order_by(Profession.name)))
+        return [profession_view(row) for row in rows]
+
     @app.post('/api/market/candidates')
     def create_candidate(body: CandidateCreate):
         token = secrets.token_urlsafe(32)
@@ -347,13 +380,18 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
                 CandidateAssessment.candidate_id == profile.id)))
             legacy = list(db.scalars(select(LegacyCandidateAssessment).where(
                 LegacyCandidateAssessment.candidate_id == profile.id)))
-            ids = [item.session_id for item in assessments] + [item.session_id for item in legacy]
+            general = list(db.scalars(select(GeneralAssessment).where(
+                GeneralAssessment.candidate_id == profile.id)))
+            ids = ([item.session_id for item in assessments] +
+                   [item.session_id for item in legacy] +
+                   [item.session_id for item in general])
             sessions = {s.id: s for s in db.scalars(select(AISession).where(AISession.id.in_(ids)))} if ids else {}
             vacancy_ids = [item.opportunity_id for item in assessments]
             assessed_vacancies = {row.id: row for row in db.scalars(select(Opportunity).where(
                 Opportunity.id.in_(vacancy_ids)))} if vacancy_ids else {}
+            recording_ids = [a.session_id for a in assessments] + [a.session_id for a in general]
             recordings = {r.session_id: r for r in db.scalars(select(VideoRecording).where(
-                VideoRecording.session_id.in_([a.session_id for a in assessments])))} if assessments else {}
+                VideoRecording.session_id.in_(recording_ids)))} if recording_ids else {}
         views = {}
         for item in assessments:
             session = sessions.get(item.session_id)
@@ -371,6 +409,20 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
                          'company_name': vacancy.company_name, 'status': vacancy.status}
             for vacancy_id, vacancy in assessed_vacancies.items()
         }
+        general_views = {}
+        for item in general:
+            session = sessions.get(item.session_id)
+            if not session:
+                continue
+            presented = session_view(session)
+            recording = recordings.get(item.session_id)
+            ready = bool(recording and recording.status == 'completed')
+            presented['recording_status'] = 'completed' if ready else 'pending'
+            if not ready and presented['report']:
+                presented['recording_pending'] = True
+            presented['profession_id'] = item.profession_id
+            presented['share_with_companies'] = bool(item.share_with_companies)
+            general_views[item.profession_id] = presented
         completed_legacy = []
         for item in legacy:
             session = sessions.get(item.session_id)
@@ -378,6 +430,7 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
                 completed_legacy.append({**session_view(session), 'archived': True})
         return {'profile': profile_view(profile), 'interested_opportunity_ids': interests,
                 'assessments': views, 'assessment_opportunities': assessment_opportunities,
+                'general_assessments': general_views,
                 'assessment': next(iter(views.values()), None),
                 'legacy_assessments': completed_legacy}
 
@@ -389,19 +442,32 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
         profile.discoverable = int(body.discoverable)
         return profile_view(profile)
 
+    @app.patch('/api/market/me/general-sharing')
+    def change_general_sharing(body: GeneralSharing,
+                               x_candidate_token: str | None = Header(None)):
+        profile = candidate_from_token(database, x_candidate_token)
+        with database.session(write=True) as db:
+            row = db.get(GeneralAssessment, (profile.id, body.profession_id))
+            if not row:
+                raise HTTPException(404, 'Общее интервью не найдено')
+            row.share_with_companies = int(body.share_with_companies)
+        return {'profession_id': body.profession_id,
+                'share_with_companies': body.share_with_companies}
+
     @app.get('/api/market/opportunities')
     def list_opportunities(x_candidate_token: str | None = Header(None)):
         profile = candidate_from_token(database, x_candidate_token)
         with database.session() as db:
-            rows = list(db.scalars(select(Opportunity).where(
-                Opportunity.status == 'open',
-                select(VacancyTemplate.id).where(
-                    VacancyTemplate.opportunity_id == Opportunity.id,
-                    VacancyTemplate.status == 'approved').exists())))
+            rows = list(db.scalars(select(Opportunity).where(Opportunity.status == 'open')))
             selected = set(db.scalars(select(CandidateInterest.opportunity_id).where(
                 CandidateInterest.candidate_id == profile.id)))
-        found = [{**opportunity_view(row), 'match': match(profile, row), 'interested': row.id in selected}
-                 for row in rows]
+            approved = {row.opportunity_id for row in db.scalars(select(VacancyTemplate).where(
+                VacancyTemplate.opportunity_id.in_([job.id for job in rows]),
+                VacancyTemplate.status == 'approved'))} if rows else set()
+            catalog = set(db.scalars(select(Profession.id)))
+        found = [{**opportunity_view(row), 'match': match(profile, row),
+                  'additional_required': row.id in approved, 'interested': row.id in selected}
+                 for row in rows if row.id in approved or profession_id_for_name(json.loads(row.stack)[0]) in catalog]
         return sorted(found, key=lambda item: (-item['match']['score'], item['title']))
 
     @app.post('/api/market/opportunities/{opportunity_id}/interest')
@@ -409,7 +475,11 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
         profile = candidate_from_token(database, x_candidate_token)
         with database.session(write=True) as db:
             opportunity = db.get(Opportunity, opportunity_id)
-            if not opportunity or opportunity.status != 'open' or not approved_template(db, opportunity_id):
+            if not opportunity or opportunity.status != 'open':
+                raise HTTPException(404, 'Возможность не найдена')
+            profession_id = profession_id_for_name(json.loads(opportunity.stack)[0])
+            if not approved_template(db, opportunity_id) and not (
+                    profession_id and db.get(Profession, profession_id)):
                 raise HTTPException(404, 'Возможность не найдена')
             if not db.get(CandidateInterest, (profile.id, opportunity_id)):
                 db.add(CandidateInterest(candidate_id=profile.id, opportunity_id=opportunity_id, created=time.time()))
@@ -486,7 +556,10 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
         with database.session(write=True) as db:
             row = _owned_opportunity(db, opportunity_id, company.id, lock=True)
             if body.status == 'open' and not approved_template(db, opportunity_id):
-                raise HTTPException(409, 'Сначала утвердите шаблон интервью')
+                profession_id = profession_id_for_name(json.loads(row.stack)[0])
+                if (_latest_template(db, opportunity_id) is not None or not profession_id
+                        or not db.get(Profession, profession_id)):
+                    raise HTTPException(409, 'Для этой профессии нужен утверждённый дополнительный шаблон')
             row.status = body.status
         return opportunity_view(row)
 
@@ -510,6 +583,12 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
                 raise HTTPException(409, 'Сначала утвердите или отредактируйте текущий черновик')
             version = latest.version + 1 if latest else 1
             context = opportunity_view(vacancy)
+            profession = db.get(Profession, context['profession_id']) if context['profession_id'] else None
+            if profession:
+                general_plan = json.loads(profession.plan_json)
+                context['already_checked_in_general'] = [
+                    {'skill': skill['name'], 'questions': skill['questions']}
+                    for skill in general_plan['skills']]
         try:
             provider = create_llm_provider(provider='yandex', budget=YandexBudget(database))
         except ValueError as exc:
@@ -520,6 +599,8 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
                   'и непустой список evaluation_criteria для каждой компетенции. '
                   'Проверяй решения рабочих ситуаций, последовательность действий и правила безопасности '
                   'только в пределах требований вакансии. Не придумывай другие требования. '
+                  'Если передан already_checked_in_general, эти базовые темы кандидат уже прошёл: '
+                  'задавай только дополнительные вопросы об узких навыках из вакансии, без повторения общего этапа. '
                   'Устный ответ не подтверждает практическое умение, квалификационное удостоверение '
                   'или допуск к работе. Не принимай решение о найме.')
         try:
@@ -536,8 +617,10 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             code = 'invalid_template_json'
             log.warning('template_generation_failed opportunity_id=%s code=%s', opportunity_id, code)
             return JSONResponse(status_code=503, content={'detail': _TEMPLATE_FAILURE_DETAIL, 'code': code})
+        settings = InterviewSettings.model_validate_json(latest.settings_json) if latest else InterviewSettings()
         row = VacancyTemplate(id=uuid4().hex, opportunity_id=opportunity_id, version=version,
-                              status='draft', plan_json=draft.model_dump_json(), created=time.time(), approved=None)
+                              status='draft', plan_json=draft.model_dump_json(),
+                              settings_json=settings.model_dump_json(), created=time.time(), approved=None)
         with database.session(write=True) as db:
             _owned_opportunity(db, opportunity_id, company.id, lock=True)
             current = _latest_template(db, opportunity_id)
@@ -546,15 +629,35 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             db.add(row)
         return template_view(row)
 
+    @app.post('/api/market/company/opportunities/{opportunity_id}/template/revision')
+    def revise_template(opportunity_id: str, x_company_key: str | None = Header(None)):
+        company = company_from_key(database, x_company_key)
+        with database.session(write=True) as db:
+            vacancy = _owned_opportunity(db, opportunity_id, company.id, lock=True)
+            current = _latest_template(db, opportunity_id)
+            if not current or current.status != 'approved':
+                raise HTTPException(409, 'Для новой редакции нужен утверждённый шаблон')
+            version = current.version + 1
+            plan = _validate_plan(json.loads(current.plan_json), vacancy, version)
+            row = VacancyTemplate(id=uuid4().hex, opportunity_id=opportunity_id,
+                                  version=version, status='draft',
+                                  plan_json=plan.model_dump_json(),
+                                  settings_json=current.settings_json,
+                                  created=time.time(), approved=None)
+            db.add(row)
+        return template_view(row)
+
     @app.put('/api/market/company/opportunities/{opportunity_id}/template/draft')
-    def edit_template(opportunity_id: str, body: dict, x_company_key: str | None = Header(None)):
+    def edit_template(opportunity_id: str, body: TemplateDraftUpdate, x_company_key: str | None = Header(None)):
         company = company_from_key(database, x_company_key)
         with database.session(write=True) as db:
             vacancy = _owned_opportunity(db, opportunity_id, company.id, lock=True)
             row = _latest_template(db, opportunity_id)
             if not row or row.status != 'draft':
                 raise HTTPException(409, 'Нет редактируемого черновика')
-            row.plan_json = _validate_plan(body.get('plan'), vacancy, row.version).model_dump_json()
+            row.plan_json = _validate_plan(body.plan, vacancy, row.version).model_dump_json()
+            if body.settings is not None:
+                row.settings_json = body.settings.model_dump_json()
         return template_view(row)
 
     @app.post('/api/market/company/opportunities/{opportunity_id}/template/approve')
@@ -566,10 +669,70 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             if not row or row.status != 'draft':
                 raise HTTPException(409, 'Нет черновика для утверждения')
             _validate_plan(json.loads(row.plan_json), vacancy, row.version)
+            InterviewSettings.model_validate_json(row.settings_json)
             row.status = 'approved'
             row.approved = time.time()
             vacancy.status = 'open'
         return template_view(row)
+
+    @app.get('/api/market/company/general-candidates')
+    def general_candidate_ranking(profession_id: str, opportunity_id: str | None = None,
+                                  x_company_key: str | None = Header(None)):
+        # Separate consent permits sharing only the preliminary rating and
+        # skill summary. General video, contacts and verbatim answers stay private.
+        company = company_from_key(database, x_company_key)
+        from backend.ai_web import AISession
+        from backend.ai_presenter import session_view
+        with database.session() as db:
+            if not db.get(Profession, profession_id):
+                raise HTTPException(404, 'Профессия не найдена')
+            if opportunity_id:
+                vacancy = _owned_opportunity(db, opportunity_id, company.id)
+                if profession_id_for_name(json.loads(vacancy.stack)[0]) != profession_id:
+                    raise HTTPException(404, 'Вакансия не найдена')
+                relevant_ids = [opportunity_id]
+            else:
+                company_vacancies = list(db.scalars(select(Opportunity).where(
+                    Opportunity.company_id == company.id)))
+                relevant_ids = [item.id for item in company_vacancies
+                                if profession_id_for_name(json.loads(item.stack)[0]) == profession_id]
+            interested_ids = set(db.scalars(select(CandidateInterest.candidate_id).where(
+                CandidateInterest.opportunity_id.in_(relevant_ids)))) if relevant_ids else set()
+            if opportunity_id and not interested_ids:
+                return []
+            filters = [GeneralAssessment.profession_id == profession_id,
+                       GeneralAssessment.share_with_companies == 1,
+                       AISession.archived == 0]
+            if opportunity_id:
+                filters.append(GeneralAssessment.candidate_id.in_(interested_ids))
+            records = list(db.execute(
+                select(GeneralAssessment, CandidateProfile, AISession)
+                .join(CandidateProfile, GeneralAssessment.candidate_id == CandidateProfile.id)
+                .join(AISession, GeneralAssessment.session_id == AISession.id)
+                .where(*filters)
+                .order_by(GeneralAssessment.created.desc()).limit(100)))
+        result = []
+        for assessment, profile, session in records:
+            presented = session_view(session)
+            report = presented.get('report')
+            if not report:
+                continue
+            rating = provisional_rating(report)
+            result.append({'candidate_name': profile.name,
+                           'profession_id': profession_id,
+                           'interested_in_your_vacancy': profile.id in interested_ids,
+                           'level': profile.level,
+                           'years_experience': profile.years_experience,
+                           'rating': rating,
+                           'skills': [{'name': skill['name'],
+                                       'status': skill['status'],
+                                       'answers_received': skill['answers_received']}
+                                      for skill in report.get('skills', [])],
+                           'summary': report['overall_technical_summary']})
+        result.sort(key=lambda item: (item['rating']['score'] is not None,
+                                      item['rating']['score'] or 0,
+                                      item['rating']['assessed_answers']), reverse=True)
+        return result
 
     @app.get('/api/market/company/candidates')
     def discover_candidates(opportunity_id: str | None = None, x_company_key: str | None = Header(None)):

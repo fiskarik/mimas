@@ -61,13 +61,16 @@ def _bucket():
 def _candidate_session(database: Database, iid: str, token: str | None):
     from backend.ai_web import AISession
     from backend.marketplace import CandidateAssessment
+    from backend.general_interview import GeneralAssessment
     if not token:
         raise HTTPException(401, 'Требуется ключ интервью')
     digest = hashlib.sha256(token.encode()).hexdigest()
     with database.session() as db:
         row = db.get(AISession, iid)
         assessment = db.scalar(select(CandidateAssessment).where(CandidateAssessment.session_id == iid))
-    if not row or not assessment or not secrets.compare_digest(row.token_hash, digest):
+        general = (db.scalar(select(GeneralAssessment).where(GeneralAssessment.session_id == iid))
+                   if row and not assessment else None)
+    if not row or not (assessment or general) or not secrets.compare_digest(row.token_hash, digest):
         raise HTTPException(404, 'Интервью не найдено')
     return row
 
