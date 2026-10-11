@@ -4,6 +4,7 @@ import {useCallback,useEffect,useRef,useState} from 'react';
 import {ArrowLeft,ArrowRight,CheckCircle2,Copy,FileText,Loader2,ShieldCheck,UploadCloud,Video} from 'lucide-react';
 import {levelLabels,market,MarketError,salary,skillNames,type CandidateResult,type Level,type Opportunity} from './marketplace-api';
 import {EmployerReport} from './employer-report';
+import {BrandLogo} from './brand-logo';
 
 type Skill = {id:string;name:string;concepts:string[];goals:string[];questions:string[];target_questions:number;evaluation_criteria?:string[]};
 type Plan = {role:string;version:string;skills:Skill[]};
@@ -247,8 +248,8 @@ export function EmployerHub(){
           </article>)}</div>
         </section>
   );
-  return <div className="market market--employer"><header className="market-header"><a href="/" className="brand-word"><img src="/icon.svg" alt="" width={32} height={32} style={{borderRadius:9}}/>mimas.</a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=candidate" className="text-link">Для кандидатов <ArrowRight size={16}/></a></nav></header>
-    <main className="market-main"><section className="market-intro" aria-labelledby="employer-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КОМПАНИЯ</span><h1 id="employer-intro-title">Находите мастеров <em>по знаниям.</em></h1><p>Опубликуйте вакансию сварщика, электрика, слесаря или токаря. Утвердите вопросы о профессии и рабочих ситуациях, затем изучите ответы кандидатов.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit">m.</span><span className="market-intro-signal">ВОПРОСЫ · ОТВЕТЫ · КОНТЕКСТ</span></div></section>
+  return <div className="market market--employer"><header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145} className="market-brand-logo"/></a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=candidate" className="text-link">Для кандидатов <ArrowRight size={16}/></a></nav></header>
+    <main className="market-main"><section className="market-intro" aria-labelledby="employer-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КОМПАНИЯ</span><h1 id="employer-intro-title">Находите мастеров <em>по знаниям.</em></h1><p>Опубликуйте вакансию сварщика, электрика, слесаря или токаря. Утвердите вопросы о профессии и рабочих ситуациях, затем изучите ответы кандидатов.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit"><BrandLogo tone="light" width={235} className="market-intro-logo"/></span><span className="market-intro-signal">ВОПРОСЫ · ОТВЕТЫ · КОНТЕКСТ</span></div></section>
     <nav className="market-quicklinks" aria-label="Разделы работодателя">{key?<><a href="#employer-general">01 · Общий рейтинг</a><a href="#employer-jobs">02 · Вакансии</a><a href="#employer-create">03 · Доп. вопросы</a><a href="#employer-results">04 · Кандидаты</a></>:<><a href="#employer-login">01 · Вход</a><a href="#employer-apply">02 · Заявка</a><a href="#employer-admin">03 · Проверка</a></>}</nav><div className="market-board">
       {error&&<div role="alert" className="error-box">{error}</div>}{notice&&<div role="status" className="note">{notice}</div>}
       {!key?<div className="market-onboard">

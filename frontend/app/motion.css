@@ -150,16 +150,6 @@
   backdrop-filter: blur(18px);
 }
 .landing section[id] { scroll-margin-top: 104px; }
-.landing .brand-mark {
-  display: inline-block;
-  flex: 0 0 auto;
-  width: 19px;
-  height: 19px;
-  color: #153e2d;
-  --brand-mark-stroke: #d7f4c0;
-  vertical-align: middle;
-}
-.landing .brand-word .brand-mark { width: 29px; height: 29px; border: 1px solid #d7f4c045; border-radius: 8px; }
 .landing .hero-topline {
   align-items: center;
   justify-content: flex-start;
@@ -167,12 +157,6 @@
   color: #f1f9e9;
   font: 500 12px/1.4 Arial, sans-serif;
   letter-spacing: .04em;
-}
-.landing .hero-topline .brand-mark {
-  width: 25px;
-  height: 25px;
-  color: #d7f4c0;
-  --brand-mark-stroke: #153e2d;
 }
 .landing .hero-footer { display: flex; justify-content: flex-end; margin-top: 32px; }
 .landing .hero-company-cta {
@@ -195,8 +179,6 @@
 .landing .landing-nav a:focus-visible,
 .landing .landing-nav button:focus-visible { outline: 3px solid #f7ffb8; outline-offset: 3px; }
 .landing .landing-manifesto h2 { margin-top: 0; }
-.landing .evidence-section .brand-mark { color: #d7f4c0; --brand-mark-stroke: #153e2d; }
-.landing .landing-cta .brand-mark { color: #1b5238; }
 .landing .footer-enter { border: 1px solid #d7f4c080; border-radius: 50px; padding: 11px 16px; }
 .landing .footer-enter:hover { background: #d7f4c01a; }
 .landing .back-to-top {

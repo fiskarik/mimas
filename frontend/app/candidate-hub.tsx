@@ -1,9 +1,9 @@
 'use client';
 
 import {useCallback,useEffect,useState} from 'react';
-import Image from 'next/image';
 import {ArrowLeft,ArrowRight,BriefcaseBusiness,CheckCircle2,Loader2,ShieldCheck,Video} from 'lucide-react';
 import AIDemo from './ai-demo';
+import {BrandLogo} from './brand-logo';
 import type {Access} from './ai-session';
 import {assessmentFor,levelLabels,market,MarketError,salaryRange,type Level,type MyProfile,type Opportunity,type Profession} from './marketplace-api';
 
@@ -120,8 +120,8 @@ export function CandidateHub(){
   const historical=me?.assessments&&!Array.isArray(me.assessments)?Object.entries(me.assessments).filter(([id])=>!jobs.some(job=>job.id===id)):[];
   if(access)return <AIDemo linkedAccess={access} interviewKind={activeGeneral?'general':'additional'} linkedOpportunity={activeGeneral?{title:'Общее интервью · '+activeGeneral.name,company_name:'Профессиональный профиль'}:activeJob?{title:activeJob.title,company_name:activeJob.company_name}:undefined} mediaStream={stream||undefined} onExit={leaveInterview}/>;
   return <div className="market market--candidate">
-    <header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><Image src="/icon.svg" alt="" width={36} height={36}/>mimas.</a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=employer" className="text-link">Для компаний <ArrowRight size={16}/></a></nav></header>
-    <main className="market-main"><section className="market-intro" aria-labelledby="candidate-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1 id="candidate-intro-title">Расскажите, как вы <em>работаете.</em></h1><p>Начните с общего интервью по профессии, затем выберите вакансию. Компания сможет задать дополнительные вопросы по своим рабочим задачам.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit"><Image src="/icon.svg" alt="" width={74} height={74}/></span><span className="market-intro-signal">СЛУШАЮ · ДУМАЮ · ОТВЕЧАЮ</span></div></section>
+    <header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145} className="market-brand-logo"/></a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=employer" className="text-link">Для компаний <ArrowRight size={16}/></a></nav></header>
+    <main className="market-main"><section className="market-intro" aria-labelledby="candidate-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1 id="candidate-intro-title">Расскажите, как вы <em>работаете.</em></h1><p>Начните с общего интервью по профессии, затем выберите вакансию. Компания сможет задать дополнительные вопросы по своим рабочим задачам.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit"><BrandLogo tone="light" width={235} className="market-intro-logo"/></span><span className="market-intro-signal">СЛУШАЮ · ДУМАЮ · ОТВЕЧАЮ</span></div></section>
     <nav className="market-quicklinks" aria-label="Этапы для кандидата"><a href="#candidate-profile">01 · Профиль</a><a href="#candidate-general">02 · Общее интервью</a><a href="#candidate-opportunities">03 · Вакансии</a><a href={consentJob ? "#candidate-interview" : "#candidate-opportunities"}>04 · Дополнительное</a></nav><div className="market-board">
       {error&&<div role="alert" className="error-box">{error}</div>}
       {!loaded?<p>Загрузка…</p>:!token?<section className="card market-form" id="candidate-profile"><h2>Профиль специалиста</h2><p className="note">Для общего интервью укажите первым пунктом одну из профессий пилота: Сварщик, Электрик, Слесарь или Токарь. Затем перечислите навыки через запятую. Доступ к профилю хранится в этом браузере.</p>

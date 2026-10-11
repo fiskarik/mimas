@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {Landing, GlassOrb, stateNames} from './design';
+import {BrandLogo} from './brand-logo';
 import {CandidateHub, EmployerHub} from './marketplace';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BriefcaseBusiness, Check, CheckCircle2, ChevronRight, Circle, Clipboard, Code2, FileText, LayoutDashboard, Link2, Loader2, Mic, Plus, Radio, ShieldCheck, Square, Video, Volume2, X } from 'lucide-react';
 
@@ -24,7 +25,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   return response.json();
 }
-function Logo() {return <div className="logo"><span className="logo-icon"><AudioLines size={22}/></span><span>mimas<span className="logo-dot">.</span></span></div>;}
+function Logo() {return <div className="logo"><BrandLogo tone="dark" width={135}/></div>;}
 function Badge({children, tone = ''}: {children: React.ReactNode; tone?: string}) {return <span className={`badge ${tone}`}>{children}</span>;}
 function ErrorBox({text}: {text: string}) {return text ? <div role="alert" className="error-box">{text}</div> : null;}
 
@@ -43,7 +44,7 @@ export default function Page() {
     setRoute(url.searchParams.has('join') ? {id: url.searchParams.get('join')!, token: url.hash.slice(1)} : null);
   }, []);
   if (route === undefined) return <div className="loading"><Loader2 className="spin"/> Загружаем пространство…</div>;
-  return route ? <div className="market"><header className="market-header"><a href="/" className="brand-word">mimas.</a></header><main className="market-main"><span className="eyebrow">СТАРОЕ ПРИГЛАШЕНИЕ</span><h1>Интервью теперь привязано к вакансии.</h1><p className="muted">Эта ссылка относится к прежней версии MIMAS. Создайте профиль кандидата, выберите вакансию и начните новое интервью.</p><a className="primary" href="/?view=candidate">Открыть кабинет кандидата <ArrowRight size={16}/></a></main></div> : candidateHub ? <CandidateHub/> : employerHub || company ? <EmployerHub/> : ai ? <CandidateHub/> : <Landing onCompany={() => {window.location.href = '/?view=employer';}}/>;
+  return route ? <div className="market"><header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145}/></a></header><main className="market-main"><span className="eyebrow">СТАРОЕ ПРИГЛАШЕНИЕ</span><h1>Интервью теперь привязано к вакансии.</h1><p className="muted">Эта ссылка относится к прежней версии MIMAS. Создайте профиль кандидата, выберите вакансию и начните новое интервью.</p><a className="primary" href="/?view=candidate">Открыть кабинет кандидата <ArrowRight size={16}/></a></main></div> : candidateHub ? <CandidateHub/> : employerHub || company ? <EmployerHub/> : ai ? <CandidateHub/> : <Landing onCompany={() => {window.location.href = '/?view=employer';}}/>;
 }
 
 function Company() {

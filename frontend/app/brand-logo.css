@@ -1,0 +1,82 @@
+.mimas-wordmark {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  aspect-ratio: 640 / 215;
+  overflow: hidden;
+  line-height: 0;
+  vertical-align: middle;
+  container-type: inline-size;
+}
+.mimas-wordmark > img {
+  position: absolute;
+  display: block;
+  top: -60.465%;
+  left: -14.0625%;
+  width: 133.125%;
+  height: auto;
+  max-width: none;
+  pointer-events: none;
+}
+/* The white GIF has an opaque black canvas. Luminance masking preserves its
+   animation while making the canvas transparent in Chromium/Edge. */
+.mimas-wordmark--light { color: #f7f7f3; mix-blend-mode: screen; }
+@supports (mask-mode: luminance) {
+  .mimas-wordmark--light { mix-blend-mode: normal; }
+  .mimas-wordmark--light > img { display: none; }
+  .mimas-wordmark--light::before {
+    content: '';
+    position: absolute;
+    top: -60.465%;
+    left: -14.0625%;
+    width: 133.125%;
+    aspect-ratio: 852 / 480;
+    background: currentColor;
+    -webkit-mask-image: url('/brand/mimas-white.gif');
+    mask-image: url('/brand/mimas-white.gif');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    mask-mode: luminance;
+  }
+}
+.mimas-wordmark--dark { mix-blend-mode: multiply; }
+.mimas-wordmark--dark > img { filter: grayscale(1) contrast(4); }
+.mimas-wordmark-static { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .mimas-wordmark > img, .mimas-wordmark--light::before { display: none; }
+  .mimas-wordmark-static {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    font: 900 25cqw / 1 Arial, sans-serif;
+    letter-spacing: -.075em;
+  }
+  .mimas-wordmark-static::before {
+    content: '';
+    position: absolute;
+    width: 5cqw;
+    height: 5cqw;
+    top: 3cqw;
+    left: 2cqw;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .mimas-wordmark--light { color: #f7f7f3; }
+  .mimas-wordmark--dark { color: #101510; }
+}
+
+/* Kicker styles previously targeted every span; preserve wordmark proportions. */
+.landing .small-kicker > .mimas-wordmark {
+  height: auto;
+  aspect-ratio: 640 / 215;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The black-on-light animation uses multiply to hide its light canvas. */
+.voice-emblem { mix-blend-mode: multiply; }

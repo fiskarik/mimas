@@ -1,9 +1,9 @@
 'use client';
 
 import {useEffect,useRef,useState} from 'react';
-import Image from 'next/image';
 import {ArrowLeft,ArrowRight,AudioLines,Loader2,Mic,MicOff,RefreshCw,Square,Video,Volume2} from 'lucide-react';
 import {AnswerReport} from './answer-report';
+import {BrandLogo} from './brand-logo';
 import {request,type Access,type Session} from './ai-session';
 import {useIntegrityEvents} from './use-integrity-events';
 import {IntegritySummary} from './integrity-summary';
@@ -214,11 +214,11 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
 
   return <div className="ai-demo voice-page">
     <div className="voice-backdrop" aria-hidden="true"><video autoPlay muted loop playsInline poster="/media/mimas-fluid-poster.webp"><source src="/media/mimas-fluid.mp4" type="video/mp4"/></video></div>
-    <header className="voice-nav"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><Image src="/icon.svg" alt="" width={36} height={36}/>mimas.</a><button className="voice-nav-exit" onClick={()=>void leave()}><ArrowLeft size={16}/> {linkedAccess?(interviewKind==='general'?'К профилю':'К вакансиям'):'На главную'}</button></header>
+    <header className="voice-nav"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145} className="voice-brand-logo"/></a><button className="voice-nav-exit" onClick={()=>void leave()}><ArrowLeft size={16}/> {linkedAccess?(interviewKind==='general'?'К профилю':'К вакансиям'):'На главную'}</button></header>
     <main className="ai-demo-main">
       {!ready?<p className="voice-load">Загружаем интервью…</p>
       :!access?<section className="voice-preflight">
-        <div className="voice-preflight-head"><span className="voice-emblem"><Image src="/icon.svg" alt="" width={56} height={56}/></span><div><span className="voice-eyebrow">MIMAS · ТЕХНИЧЕСКОЕ ИНТЕРВЬЮ</span><h1>Разговор о ваших навыках</h1></div></div>
+        <div className="voice-preflight-head"><span className="voice-emblem"><BrandLogo tone="dark" width={132} className="voice-preflight-logo"/></span><div><span className="voice-eyebrow">MIMAS · ТЕХНИЧЕСКОЕ ИНТЕРВЬЮ</span><h1>Разговор о ваших навыках</h1></div></div>
         <div className="voice-preflight-steps"><span>01 · Профиль</span><span>02 · Вакансия</span><span>03 · Интервью</span></div>
         <div className="voice-preflight-grid"><article><span className="voice-card-index">НАЧАЛО</span><h2>Выберите вакансию</h2><p>Зарегистрируйтесь как кандидат и выберите вакансию. После проверки устройств MIMAS проведёт голосовое интервью по утверждённому шаблону. Длительность — до 20 минут.</p><a className="voice-cta" href="/?view=candidate"><ArrowRight size={18}/> В кабинет кандидата</a></article><article><span className="voice-card-index">ЧТО ПОНАДОБИТСЯ</span><h2>Проверьте устройства</h2><p>Разрешите доступ к камере и микрофону, наденьте наушники. MIMAS озвучит вопрос, вы ответите голосом, а стенограмма сохранится в отчёте.</p><div className="voice-device-list"><span><Video size={18}/> Камера</span><span><Mic size={18}/> Микрофон</span><span><Volume2 size={18}/> Наушники</span></div></article></div>
       </section>
@@ -226,7 +226,7 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
       :<div className="voice-session">
         <header className="voice-session-header"><div><span className="voice-eyebrow">MIMAS · {interviewKind==='general'?'ОБЩЕЕ':'ДОПОЛНИТЕЛЬНОЕ'} ГОЛОСОВОЕ ИНТЕРВЬЮ</span><h1>{linkedOpportunity?linkedOpportunity.title:'Профессиональный диалог'}</h1><p>{linkedOpportunity?.company_name||'Голосовое интервью с MIMAS'}</p></div><span className="voice-session-counter">{secondsLeft!==null&&<span aria-label="Осталось времени">{String(Math.floor(secondsLeft/60)).padStart(2,'0')}:{String(secondsLeft%60).padStart(2,'0')} · </span>}{data.answers.length} ответов сохранено</span></header>
         {data.phase==='CREATED'&&<div className="voice-preflight voice-session-preflight">
-          <div className="voice-preflight-head"><span className="voice-emblem"><Image src="/icon.svg" alt="" width={56} height={56}/></span><div><span className="voice-eyebrow">ГОТОВЫ К ДИАЛОГУ?</span><h2>Проверим связь и начнём</h2></div></div>
+          <div className="voice-preflight-head"><span className="voice-emblem"><BrandLogo tone="dark" width={132} className="voice-preflight-logo"/></span><div><span className="voice-eyebrow">ГОТОВЫ К ДИАЛОГУ?</span><h2>Проверим связь и начнём</h2></div></div>
           <div className="voice-preflight-steps"><span>Камера {media.ready?'готова':'подключается'}</span><span>Микрофон {hasMicrophone?'готов':'не найден'}</span><span>Запись {media.status==='recording'?'идёт':'ожидает'}</span></div>
           <div className="voice-preflight-grid"><article><span className="voice-card-index">УСТРОЙСТВА</span><h3>Ваше видео</h3><div className="voice-preview-box">{videoPreview?<video ref={media.videoRef} autoPlay muted playsInline/>:<Video size={28}/>}</div><p>Оставьте камеру и микрофон включёнными до завершения интервью. Наденьте наушники, чтобы MIMAS не услышал собственный голос из динамиков.</p></article><article><span className="voice-card-index">СОГЛАСИЕ И ПОДКЛЮЧЕНИЕ</span><h3>Перед первым вопросом</h3><p>{interviewKind==='general'?'Общий отчёт и рейтинг увидите вы и одобренные компании. Видео остаётся доступно только вам. Голосовые ответы сохраняются в отчёте.':'Результат увидите вы и компания, открывшая вакансию. Голосовые ответы распознаются и сохраняются в отчёте.'}</p>{linkedAccess&&<CandidateMonitorPanel monitor={monitor} kind={interviewKind}/>}<button className="voice-cta" disabled={busy||!hasMicrophone||Boolean(requiresVideo&&!media.ready)||Boolean(linkedAccess&&!monitor.startReady)} onClick={()=>void startVoice()}>{busy?<Loader2 className="spin" size={18}/>:<Mic size={18}/>} Начать разговор</button></article></div>
         </div>}

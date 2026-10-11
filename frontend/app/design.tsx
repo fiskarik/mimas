@@ -2,6 +2,7 @@
 
 import {ArrowDown, ArrowRight, ArrowUp, ArrowUpRight, Check, ClipboardCheck, Mic, ShieldCheck, Video} from 'lucide-react';
 import {IntelligenceSection, InterviewOrb, MotionVideo} from './motion';
+import {BrandLogo} from './brand-logo';
 
 export type OrbState = 'idle' | 'speaking' | 'listening' | 'thinking' | 'saved';
 export const stateNames: Record<OrbState, string> = {
@@ -48,7 +49,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
   return <div className="landing" id="top">
     <a className="skip-link" href="#main-content">Перейти к содержимому</a>
     <header className="landing-nav">
-      <a href="/" className="brand-word" aria-label="mimas — главная"><BrandMark/>mimas</a>
+      <a href="/" className="brand-word" aria-label="mimas — главная"><BrandLogo tone="light" width="clamp(108px, 12vw, 155px)"/></a>
       <nav aria-label="Навигация">
         <a href="#how"><PixelMark/>Как работает</a>
         <a href="#evidence"><PixelMark variant="cross"/>Отчёт</a>
@@ -59,7 +60,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
     <main id="main-content">
       <section className="landing-hero" aria-labelledby="hero-title">
         <div className="hero-surface" aria-hidden="true"><MotionVideo src="/media/mimas-fluid.mp4" poster="/media/mimas-fluid-poster.webp"/></div>
-        <div className="hero-topline"><BrandMark/><span>mimas — голосовое AI-интервью</span></div>
+        <div className="hero-topline"><BrandLogo tone="light" width="clamp(70px, 9vw, 105px)"/><span>голосовое AI-интервью</span></div>
         <div className="hero-copy">
           <h1 id="hero-title">За каждым <span className="hero-lemon"><PixelMark/>навыком</span><br/>стоит <span className="hero-mint"><PixelMark variant="steps"/>человек.</span></h1>
           <div className="hero-bottom">
@@ -85,7 +86,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
 
       <section className="journey-section" id="how">
         <div className="section-intro">
-          <span className="small-kicker"><BrandMark/> 01 / ПРОЦЕСС</span>
+          <span className="small-kicker"><BrandLogo tone="dark" width={52}/> 01 / ПРОЦЕСС</span>
           <h2>Одна вакансия.<br/><span>Предметный разговор.</span></h2>
           <p>Компания готовит вопросы, кандидат отвечает голосом, обе стороны видят результат.</p>
         </div>
@@ -107,7 +108,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
 
       <section className="evidence-section" id="evidence">
         <div className="evidence-copy">
-          <span className="small-kicker"><BrandMark/> 02 / РЕЗУЛЬТАТ</span>
+          <span className="small-kicker"><BrandLogo tone="light" width={52}/> 02 / РЕЗУЛЬТАТ</span>
           <h2>За оценкой<br/>есть <em>ответ.</em></h2>
           <p>Прочитайте слова кандидата и посмотрите запись. Отчёт показывает, что удалось выяснить в разговоре и что осталось проверить на практике.</p>
           <button className="hero-secondary" onClick={onCompany}>Открыть кабинет компании <ArrowUpRight size={18}/></button>
@@ -127,7 +128,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
 
       <section className="integrity-section" id="integrity">
         <div>
-          <span className="small-kicker"><BrandMark/> 03 / ПРОЗРАЧНОСТЬ</span>
+          <span className="small-kicker"><BrandLogo tone="dark" width={52}/> 03 / ПРОЗРАЧНОСТЬ</span>
           <h2>Понятные правила.<br/><span>Уважение к человеку.</span></h2>
           <p className="integrity-caption">Предупреждения не означают автоматического отказа.</p>
         </div>
@@ -143,7 +144,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
 
       <section className="landing-cta">
         <div className="cta-orbit" aria-hidden="true"><PixelMark/></div>
-        <span className="small-kicker"><BrandMark/> ЗНАНИЯ ВАЖНО УСЛЫШАТЬ</span>
+        <span className="small-kicker"><BrandLogo tone="dark" width={52}/> ЗНАНИЯ ВАЖНО УСЛЫШАТЬ</span>
         <h2>Всё начинается<br/>с <span>разговора.</span></h2>
         <a className="primary" href="/?view=candidate">Найти вакансию <ArrowUpRight size={19}/></a>
         <button className="hero-secondary" onClick={onCompany}>Разместить вакансию <ArrowRight size={17}/></button>
@@ -151,7 +152,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
     </main>
     <footer className="landing-footer">
       <div className="footer-top">
-        <a href="/" className="brand-word"><BrandMark/>mimas.</a>
+        <a href="/" className="brand-word" aria-label="mimas — главная"><BrandLogo tone="light" width="clamp(130px, 14vw, 175px)"/></a>
         <p>Голосовой разговор о профессии.<br/>Решение остаётся за человеком.</p>
         <nav aria-label="Навигация в подвале"><a href="#how">Процесс</a><a href="#evidence">Отчёт</a><a href="#integrity">Правила</a></nav>
         <button className="footer-enter" onClick={onCompany}>Кабинет компании <ArrowUpRight size={18}/></button>
@@ -163,11 +164,4 @@ export function Landing({onCompany}: {onCompany: () => void}) {
 
 function PixelMark({variant = 'diamond'}: {variant?: 'diamond' | 'cross' | 'steps'}) {
   return <span className={'pixel-mark pixel-' + variant} aria-hidden="true">{Array.from({length: 9}, (_, i) => <i key={i}/>)}</span>;
-}
-
-function BrandMark() {
-  return <svg className="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-    <rect width="64" height="64" rx="16" fill="currentColor"/>
-    <path d="M16 46V19L32 35L48 19V46" fill="none" stroke="var(--brand-mark-stroke, #d7f4c0)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>;
 }

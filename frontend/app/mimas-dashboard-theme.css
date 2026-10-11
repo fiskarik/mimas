@@ -269,9 +269,13 @@
   .market-quicklinks a { transition: none; }
 }
 
-.market--candidate .market-header .brand-word img{display:block;flex:0 0 auto;border-radius:9px}
-.market--candidate .market-intro-orbit img{display:block;border-radius:17px;filter:drop-shadow(0 7px 32px #d4f2b365)}
-@media(max-width:680px){.market--candidate .market-header .brand-word img{width:29px;height:29px}}
+.market .market-header .brand-word { line-height: 0; }
+.market .market-header .market-brand-logo { max-width: 145px; }
+.market-intro-orbit .market-intro-logo { max-width: min(235px, 68vw); }
+@media(max-width:680px){
+  .market .market-header .market-brand-logo { max-width: 115px; }
+  .market-intro-orbit .market-intro-logo { max-width: min(205px, 68vw); }
+}
 
 .market--candidate .market-quicklinks{grid-template-columns:repeat(4,minmax(0,1fr))}
 .market-general-card{display:grid;grid-template-columns:minmax(210px,.72fr) minmax(0,1fr);gap:clamp(22px,3vw,44px);padding:clamp(22px,3vw,36px)}
