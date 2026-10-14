@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {GlassOrb, stateNames} from './design';
-import {SammiLanding} from './sammi-landing';
+import {Landing, GlassOrb, stateNames} from './design';
 import {BrandLogo} from './brand-logo';
 import {CandidateHub, EmployerHub} from './marketplace';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BriefcaseBusiness, Check, CheckCircle2, ChevronRight, Circle, Clipboard, Code2, FileText, LayoutDashboard, Link2, Loader2, Mic, Plus, Radio, ShieldCheck, Square, Video, Volume2, X } from 'lucide-react';
@@ -45,7 +44,7 @@ export default function Page() {
     setRoute(url.searchParams.has('join') ? {id: url.searchParams.get('join')!, token: url.hash.slice(1)} : null);
   }, []);
   if (route === undefined) return <div className="loading"><Loader2 className="spin"/> Загружаем пространство…</div>;
-  return route ? <div className="market"><header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145}/></a></header><main className="market-main"><span className="eyebrow">СТАРОЕ ПРИГЛАШЕНИЕ</span><h1>Интервью теперь привязано к вакансии.</h1><p className="muted">Эта ссылка относится к прежней версии MIMAS. Создайте профиль кандидата, выберите вакансию и начните новое интервью.</p><a className="primary" href="/?view=candidate">Открыть кабинет кандидата <ArrowRight size={16}/></a></main></div> : candidateHub ? <CandidateHub/> : employerHub || company ? <EmployerHub/> : ai ? <CandidateHub/> : <SammiLanding/>;
+  return route ? <div className="market"><header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145}/></a></header><main className="market-main"><span className="eyebrow">СТАРОЕ ПРИГЛАШЕНИЕ</span><h1>Интервью теперь привязано к вакансии.</h1><p className="muted">Эта ссылка относится к прежней версии MIMAS. Создайте профиль кандидата, выберите вакансию и начните новое интервью.</p><a className="primary" href="/?view=candidate">Открыть кабинет кандидата <ArrowRight size={16}/></a></main></div> : candidateHub ? <CandidateHub/> : employerHub || company ? <EmployerHub/> : ai ? <CandidateHub/> : <Landing onCompany={() => {window.location.href = '/?view=employer';}}/>;
 }
 
 function Company() {
