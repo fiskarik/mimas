@@ -4,6 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {ArrowLeft,ArrowRight,BriefcaseBusiness,Loader2,ShieldCheck,Video} from 'lucide-react';
 import AIDemo from './ai-demo';
 import {BrandLogo} from './brand-logo';
+import {CursorDots} from './cursor-dots';
 import type {Access} from './ai-session';
 import {assessmentFor,levelLabels,market,MarketError,salaryRange,type AssessmentView,type Level,type MyProfile,type Opportunity,type Profession} from './marketplace-api';
 import type {SkillReport} from './ai-session';
@@ -161,7 +162,8 @@ export function CandidateHub(){
   return <div className="market market--candidate">
     <header className="market-header"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145} className="market-brand-logo"/></a><nav><a href="/" className="text-link"><ArrowLeft size={16}/> На главную</a><a href="/?view=employer" className="text-link">Для компаний <ArrowRight size={16}/></a></nav></header>
     <main className="market-main"><section className="market-intro" aria-labelledby="candidate-intro-title"><div className="market-intro-copy"><span className="eyebrow">MIMAS · КАНДИДАТ</span><h1 id="candidate-intro-title">Расскажите, как вы <em>работаете.</em></h1><p>Пройдите одно общее интервью о работе в магазине или на складе, затем выберите вакансию. Компания сможет добавить вопросы по своим рабочим задачам.</p></div><div className="market-intro-art" aria-hidden="true"><span className="market-intro-orbit"><BrandLogo tone="light" width={235} className="market-intro-logo"/></span><span className="market-intro-signal">СЛУШАЮ · ДУМАЮ · ОТВЕЧАЮ</span></div></section>
-    <nav className="market-quicklinks" aria-label="Этапы для кандидата"><a href="#candidate-profile">01 · Профиль</a><a href="#candidate-general">02 · Общее интервью</a><a href="#candidate-opportunities">03 · Вакансии</a><a href={consentJob ? "#candidate-interview" : "#candidate-opportunities"}>04 · Дополнительное</a></nav><div className="market-board">
+    <nav className="market-quicklinks" aria-label="Этапы для кандидата"><a href="#candidate-profile">01 · Профиль</a><a href="#candidate-general">02 · Общее интервью</a><a href="#candidate-opportunities">03 · Вакансии</a><a href={consentJob ? "#candidate-interview" : "#candidate-opportunities"}>04 · Дополнительное</a></nav><div className={`market-board${loaded&&!token?' market-board--onboarding':''}`}>
+      {loaded&&!token&&<CursorDots variant="background"/>}
       {error&&<div role="alert" className="error-box">{error}</div>}
       {!loaded?<p>Загрузка…</p>:!token?<section className="card market-form" id="candidate-profile"><h2>Профиль соискателя</h2><p className="note">Укажите направление работы первым пунктом: продавец-кассир, работник торгового зала, сборщик заказов или работник склада. Затем перечислите свой опыт через запятую. Это сведения анкеты; проверенные навыки появятся в профиле после интервью. Доступ к профилю хранится в этом браузере.</p>
         <form onSubmit={register}><label>Имя или псевдоним<input required minLength={2} maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></label>

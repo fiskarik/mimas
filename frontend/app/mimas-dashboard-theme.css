@@ -277,6 +277,31 @@
   .market-intro-orbit .market-intro-logo { max-width: min(205px, 68vw); }
 }
 
+/* Keep the cursor-reactive dots behind the candidate's initial profile form only. */
+.market--candidate .market-board--onboarding {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #080a0a;
+  border-color: #a9b8aa52;
+}
+.market-board--onboarding > .cursor-dots {
+  z-index: 0;
+}
+.market-board--onboarding > :not(.cursor-dots) {
+  position: relative;
+  z-index: 1;
+}
+.market-board--onboarding .market-form {
+  background: #e9eee8ef;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 18px 56px #0007;
+}
+.market-board--onboarding .market-footer { color: #d5dfd5; }
+@media (max-width: 680px) {
+  .market-board--onboarding { padding-top: 76px; }
+}
+
 .market--candidate .market-quicklinks{grid-template-columns:repeat(4,minmax(0,1fr))}
 .market-general-card{display:grid;grid-template-columns:minmax(210px,.72fr) minmax(0,1fr);gap:clamp(22px,3vw,44px);padding:clamp(22px,3vw,36px)}
 .market-general-card>div{min-width:0}

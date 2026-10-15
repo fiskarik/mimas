@@ -12,8 +12,10 @@ function hash2(i: number, j: number) {
   return ((n ^ (n >> 16)) >>> 0) / 4294967295;
 }
 
-/** Section-bound decorative version of the supplied CursorField effect. */
-export function CursorDots() {
+type CursorDotsVariant = 'section' | 'background' | 'viewport';
+
+/** Decorative CursorField effect. Background variants never intercept input. */
+export function CursorDots({variant = 'section', className = ''}: {variant?: CursorDotsVariant; className?: string}) {
   const sectionRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -85,8 +87,15 @@ export function CursorDots() {
     };
 
     const onMove = (event: PointerEvent) => {
-      if (!canRespond() || event.pointerType === 'touch') return;
+      if (!canRespond() || event.pointerType === 'touch') {
+        if (pointer.active) onLeave();
+        return;
+      }
       const bounds = section.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+        onLeave();
+        return;
+      }
       pointer.x = event.clientX - bounds.left;
       pointer.y = event.clientY - bounds.top;
       pointer.active = true;
@@ -112,8 +121,9 @@ export function CursorDots() {
       else pointer.active = false;
     }, {rootMargin: '100px'});
     visibilityObserver.observe(section);
-    section.addEventListener('pointermove', onMove, {passive: true});
-    section.addEventListener('pointerleave', onLeave);
+    // The backdrop is transparent to clicks; listen above it so controls remain usable.
+    window.addEventListener('pointermove', onMove, {passive: true});
+    window.addEventListener('blur', onLeave);
     reducedMotion.addEventListener('change', onPreferenceChange);
     finePointer.addEventListener('change', onPreferenceChange);
 
@@ -121,14 +131,14 @@ export function CursorDots() {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
       visibilityObserver.disconnect();
-      section.removeEventListener('pointermove', onMove);
-      section.removeEventListener('pointerleave', onLeave);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('blur', onLeave);
       reducedMotion.removeEventListener('change', onPreferenceChange);
       finePointer.removeEventListener('change', onPreferenceChange);
     };
   }, []);
 
-  return <div className="cursor-dots" ref={sectionRef} aria-hidden="true">
+  return <div className={`cursor-dots cursor-dots--${variant}${className ? ` ${className}` : ''}`} ref={sectionRef} aria-hidden="true">
     <canvas ref={canvasRef}/>
   </div>;
 }

@@ -4,6 +4,7 @@ import {useEffect,useRef,useState} from 'react';
 import {ArrowLeft,ArrowRight,AudioLines,Loader2,Mic,MicOff,RefreshCw,Square,Video,Volume2} from 'lucide-react';
 import {AnswerReport} from './answer-report';
 import {BrandLogo} from './brand-logo';
+import {CursorDots} from './cursor-dots';
 import {request,type Access,type Session} from './ai-session';
 import {useIntegrityEvents} from './use-integrity-events';
 import {IntegritySummary} from './integrity-summary';
@@ -213,7 +214,7 @@ export default function AIDemo({linkedAccess,onExit,linkedOpportunity,mediaStrea
   },[active,voice.startAnswer,voice.finishAnswer]);
 
   return <div className="ai-demo voice-page">
-    <div className="voice-backdrop" aria-hidden="true"><video autoPlay muted loop playsInline poster="/media/mimas-fluid-poster.webp"><source src="/media/mimas-fluid.mp4" type="video/mp4"/></video></div>
+    <CursorDots variant="viewport"/>
     <header className="voice-nav"><a href="/" className="brand-word" aria-label="MIMAS — на главную"><BrandLogo tone="light" width={145} className="voice-brand-logo"/></a><button className="voice-nav-exit" onClick={()=>void leave()}><ArrowLeft size={16}/> {linkedAccess?(interviewKind==='general'?'К профилю':'К вакансиям'):'На главную'}</button></header>
     <main className="ai-demo-main">
       {!ready?<p className="voice-load">Загружаем интервью…</p>

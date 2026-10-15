@@ -15,11 +15,9 @@
 .ai-report-video p{margin:10px 0 0}
 @media(max-width:700px){.ai-media-panel{grid-template-columns:1fr}.ai-media-preview{max-width:400px}}
 
-/* Voice interview. The video and translucent panels follow the candidate's visual references. */
-.voice-page{position:relative;isolation:isolate;min-height:100vh;background:#111a15;color:#17231c}
-.voice-backdrop{position:fixed;z-index:-2;inset:0;overflow:hidden;background:#111a15}
-.voice-backdrop:after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,#0d160f99,#26342955 48%,#07100bbb)}
-.voice-backdrop video{width:100%;height:100%;object-fit:cover;filter:brightness(.54) saturate(.7);transform:scale(1.06)}
+/* Voice interview keeps controls above the cursor-reactive backdrop. */
+.voice-page{position:relative;isolation:isolate;min-height:100vh;background:#080a0a;color:#17231c}
+.voice-page>.cursor-dots--viewport{position:fixed;inset:0;z-index:-1;pointer-events:none}
 .voice-nav{max-width:1300px;margin:auto;padding:24px 4.5%;display:flex;align-items:center;justify-content:space-between;color:#f5f4e8}
 .voice-nav .brand-word{color:#f5f4e8;text-decoration:none;line-height:0}
 .voice-nav-exit{display:inline-flex;align-items:center;gap:10px;color:#f5f4e8;border:1px solid #f5f4e855;background:#f5f4e815;border-radius:999px;padding:11px 17px;cursor:pointer;font-size:13px}
