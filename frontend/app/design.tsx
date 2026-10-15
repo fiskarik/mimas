@@ -3,6 +3,7 @@
 import {ArrowDown, ArrowRight, ArrowUp, ArrowUpRight, Check, ClipboardCheck, Mic, ShieldCheck, Video} from 'lucide-react';
 import {IntelligenceSection, InterviewOrb, MotionVideo} from './motion';
 import {BrandLogo} from './brand-logo';
+import {CursorDots} from './cursor-dots';
 
 export type OrbState = 'idle' | 'speaking' | 'listening' | 'thinking' | 'saved';
 export const stateNames: Record<OrbState, string> = {
@@ -149,6 +150,7 @@ export function Landing({onCompany}: {onCompany: () => void}) {
         <a className="primary" href="/?view=candidate">Найти вакансию <ArrowUpRight size={19}/></a>
         <button className="hero-secondary" onClick={onCompany}>Разместить вакансию <ArrowRight size={17}/></button>
       </section>
+      <CursorDots/>
     </main>
     <footer className="landing-footer">
       <div className="footer-top">

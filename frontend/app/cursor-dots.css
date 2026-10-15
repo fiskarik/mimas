@@ -1,0 +1,23 @@
+.landing .cursor-dots {
+  position: relative;
+  width: 100%;
+  height: clamp(220px, 23vw, 280px);
+  overflow: hidden;
+  isolation: isolate;
+  background: #080a0a;
+}
+
+.landing .cursor-dots canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .landing .cursor-dots {
+    height: 150px;
+  }
+}
