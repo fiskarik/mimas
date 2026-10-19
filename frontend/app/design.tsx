@@ -1,9 +1,10 @@
 'use client';
 
-import {ArrowDown, ArrowRight, ArrowUp, ArrowUpRight, Check, ClipboardCheck, Mic, ShieldCheck, Video} from 'lucide-react';
-import {IntelligenceSection, InterviewOrb, MotionVideo} from './motion';
+import {ArrowDown, ArrowRight, ArrowUp, ArrowUpRight, Check, ShieldCheck, Video} from 'lucide-react';
+import {InterviewOrb, MotionVideo} from './motion';
 import {BrandLogo} from './brand-logo';
 import {CursorDots} from './cursor-dots';
+import {LandingInterviewPreview, LandingProcess, LandingRoles, LandingSkillReport} from './landing-product';
 
 export type OrbState = 'idle' | 'speaking' | 'listening' | 'thinking' | 'saved';
 export const stateNames: Record<OrbState, string> = {
@@ -15,36 +16,6 @@ export const stateNames: Record<OrbState, string> = {
 };
 
 export const GlassOrb = InterviewOrb;
-
-const interviewSteps = [
-  {
-    number: '01',
-    icon: <Mic/>,
-    title: 'Расскажите',
-    text: 'Вопросы о работе в магазине и на складе. Отвечайте голосом и объясняйте, как поступите.',
-    label: 'ГОЛОСОВОЙ ДИАЛОГ',
-  },
-  {
-    number: '02',
-    icon: <ClipboardCheck/>,
-    title: 'Разберите ситуацию',
-    text: 'Например, что делать, если цена на кассе не совпала с ценником или при приёмке не хватает товара.',
-    label: 'РАБОЧИЕ СИТУАЦИИ',
-  },
-  {
-    number: '03',
-    icon: <ShieldCheck/>,
-    title: 'Изучите отчёт',
-    text: 'В отчёте сохраняются ответы и основания оценки. Решение о найме принимает компания.',
-    label: 'ПРОЗРАЧНЫЙ РЕЗУЛЬТАТ',
-  },
-];
-
-const sampleSkills = [
-  {skill: 'Работа с покупателем', status: 'Подход описан', text: 'Объяснил, как проверить цену и спокойно ответить покупателю.', bars: 6},
-  {skill: 'Приёмка товара', status: 'Нужно уточнить', text: 'Назвал сверку количества, но не описал действия при расхождении.', bars: 3},
-  {skill: 'Работа с кассой', status: 'Не проверялось', text: 'Устный ответ не подтверждает практическое владение кассой.', bars: 0},
-];
 
 export function Landing({onCompany}: {onCompany: () => void}) {
   return <div className="landing" id="top">
@@ -77,55 +48,9 @@ export function Landing({onCompany}: {onCompany: () => void}) {
         </div>
       </section>
 
-      <section className="landing-manifesto" aria-labelledby="manifesto-title">
-        <h2 id="manifesto-title">Меньше догадок.<br/><span>Больше понимания.</span></h2>
-        <p>Резюме перечислит места работы. Разговор покажет, как кандидат решает<br/>знакомые задачи магазина и склада. Практические умения проверяются отдельно.</p>
-        <a className="manifesto-link" href="/?view=candidate">Смотреть вакансии <ArrowUpRight size={18}/></a>
-      </section>
-
-      <IntelligenceSection/>
-
-      <section className="journey-section" id="how">
-        <div className="section-intro">
-          <span className="small-kicker"><BrandLogo tone="dark" width={52}/> 01 / ПРОЦЕСС</span>
-          <h2>Рабочие задачи.<br/><span>Предметный разговор.</span></h2>
-          <p>Кандидат отвечает голосом, а компания видит ответы и разбор навыков.</p>
-        </div>
-        <div className="journey-grid">{interviewSteps.map(item =>
-          <article key={item.number}>
-            <div className="journey-top"><span>{item.number} /</span>{item.icon}</div>
-            <div className={'journey-visual visual-' + item.number} aria-hidden="true">
-              {item.number === '01'
-                ? <div className="signal-wave">{Array.from({length: 25}, (_, i) => <i key={i} style={{height: (16 + Math.round(Math.abs(Math.sin(i * 1.7)) * (52 - Math.abs(12-i)*3))) + 'px'}}/>)}</div>
-                : item.number === '02'
-                  ? <div className="scenario-fragment"><span>Ситуация</span><strong>Цена на кассе не совпала с ценником. Что сделаете?</strong><small>Объясните порядок действий.</small></div>
-                  : <div className="signal-result"><PixelMark/><span>Ответ сохранён<small>Разбор · запись · уточнения</small></span><Check size={18}/></div>}
-            </div>
-            <span className="journey-label">{item.label}</span>
-            <h3>{item.title}</h3>
-            <p>{item.text}</p>
-          </article>)}</div>
-      </section>
-
-      <section className="evidence-section" id="evidence">
-        <div className="evidence-copy">
-          <span className="small-kicker"><BrandLogo tone="light" width={52}/> 02 / РЕЗУЛЬТАТ</span>
-          <h2>За оценкой<br/>есть <em>ответ.</em></h2>
-          <p>Прочитайте слова кандидата и посмотрите запись. Отчёт показывает, что удалось выяснить в разговоре и что осталось проверить на практике.</p>
-          <button className="hero-secondary" onClick={onCompany}>Открыть кабинет компании <ArrowUpRight size={18}/></button>
-          <span className="concept-caption">Пример оформления отчёта.<br/>Не результат реального кандидата.</span>
-        </div>
-        <div className="evidence-sheet">
-          <div className="sheet-top"><span><PixelMark/> РАЗБОР ОТВЕТОВ</span><span className="sample-badge">Образец</span></div>
-          <h3>Навыки для работы в магазине</h3><p>Выводы ограничены устными ответами</p>
-          {sampleSkills.map(item => <div className="skill-example" key={item.skill}>
-            <div><strong>{item.skill}</strong><span>{item.status}</span></div>
-            <div className="skill-bars" aria-hidden="true">{Array.from({length: 12}, (_, i) => <i className={i < item.bars * 1.5 ? 'filled' : ''} key={i}/>)}</div>
-            <p>{item.text}</p>
-          </div>)}
-          <div className="sheet-foot"><ShieldCheck size={16}/> Решение о найме принимает человек <ArrowUpRight size={16}/></div>
-        </div>
-      </section>
+      <LandingInterviewPreview/>
+      <LandingProcess/>
+      <LandingSkillReport onCompany={onCompany}/>
 
       <section className="integrity-section" id="integrity">
         <div>
@@ -142,6 +67,8 @@ export function Landing({onCompany}: {onCompany: () => void}) {
           </div>
         </div>
       </section>
+
+      <LandingRoles/>
 
       <section className="landing-cta">
         <div className="cta-orbit" aria-hidden="true"><PixelMark/></div>
