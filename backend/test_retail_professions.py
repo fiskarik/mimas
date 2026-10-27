@@ -203,7 +203,7 @@ def test_cashier_interview_asks_cards_probes_and_scores_by_anchors(monkeypatch):
             'profession_id': 'cashier', 'consent': True, 'share_with_companies': False}).json()['id']
         access = {'X-Interview-Token': token}
         prefix = '/api/ai/sessions/' + session_id
-        assert client.post(prefix + '/recording/init', headers=access).status_code == 200
+        # No camera: the interview starts without a video recording.
         view = client.post(prefix + '/start', headers=access).json()
         asked = []
         while view['current_question']:
@@ -221,6 +221,7 @@ def test_cashier_interview_asks_cards_probes_and_scores_by_anchors(monkeypatch):
     assert asked[3]['text'] == cards[1].probes[0]
     assert asked[-1]['type'] == 'behavioral'
     report = view['report']
+    assert view['recording_status'] == 'none' and view['recording_required'] is False
     assert report['stop_reason'] == 'plan_completed'
     assert report['template_format'] == 2 and report['scoring_rubric']['not_assessed'] == plan.not_assessed
     assert [score['points'] for score in report['card_scores']] == [10, 10, 6, 6, 6]

@@ -57,7 +57,8 @@ def test_finish_without_ai_preserves_checkpointed_answer_ungraded(
         assert response.status_code == 200, response.text
         result = response.json()
         assert result['phase'] == 'COMPLETED'
-        assert result['recording_required'] is True
+        # No camera was used, so the report does not wait for a video.
+        assert result['recording_required'] is False and result['recording_status'] == 'none'
         assert result['report']['stop_reason'] == 'candidate_stopped'
         assert result['answers'] == [answer.model_dump()]
         review = result['report']['answer_reviews'][0]

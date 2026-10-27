@@ -6,7 +6,7 @@ export type Opportunity = {id:string;profession_id?:string|null;company_name:str
 export type AssessmentView = {opportunity_id?:string;profession_id?:string;share_with_companies?:boolean;session_id?:string;id?:string;phase?:string;report?:unknown;status?:string};
 export type MyProfile = {profile:Profile;interested_opportunity_ids:string[];assessments?:AssessmentView[]|Record<string,AssessmentView>;assessment_opportunities?:Record<string,Pick<Opportunity,'id'|'title'|'company_name'|'status'>>;general_assessments?:Record<string,AssessmentView>;assessment?:{report?:unknown;phase?:string}|null};
 export type Evidence = {id:string;type:string;claim:string;quote:string;question_text:string};
-export type CandidateResult = {profile:Profile;assessment_id:string;opportunity_id?:string;status?:string;summary:string|null;skills:{skill:string;demonstrated_level:string|null;status:string;answers_received:number;evaluated_answers:number;evidence:Evidence[]}[];quality_status?:string;match?:Match;interested?:boolean};
+export type CandidateResult = {profile:Profile;assessment_id:string;opportunity_id?:string;status?:string;recording_status?:string;summary:string|null;skills:{skill:string;demonstrated_level:string|null;status:string;answers_received:number;evaluated_answers:number;evidence:Evidence[]}[];quality_status?:string;match?:Match;interested?:boolean};
 
 export class MarketError extends Error {constructor(public status:number,message:string){super(message);this.name='MarketError';}}
 export async function market<T>(path:string, options:{method?:string;token?:string;key?:string;adminKey?:string;claimToken?:string;body?:unknown;file?:File} = {}):Promise<T> {

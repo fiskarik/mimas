@@ -287,15 +287,25 @@ def test_employer_report_requires_matching_vacancy_owner(monkeypatch):
         assert client.get('/api/market/company/candidates', headers=other).json() == []
         early_report = client.get(report_url, headers=owner)
         assert early_report.status_code == 200
-        assert early_report.json()['session']['recording_status'] == 'pending'
-        pending = client.get('/api/market/company/candidates', headers=owner).json()
-        assert pending[0]['status'] == 'completed'
-        assert pending[0]['recording_status'] == 'pending'
-        assert pending[0]['summary'] is not None
+        # No recording row: the interview was taken without a camera.
+        assert early_report.json()['session']['recording_status'] == 'none'
+        listed = client.get('/api/market/company/candidates', headers=owner).json()
+        assert listed[0]['status'] == 'completed'
+        assert listed[0]['recording_status'] == 'none'
+        assert listed[0]['summary'] is not None
         candidate_key = {'X-Candidate-Token': signup['token']}
         own = client.get('/api/market/me', headers=candidate_key).json()['assessments'][vacancy['id']]
         assert own['report'] is not None
-        assert own['recording_status'] == 'pending'
+        assert own['recording_status'] == 'none' and 'recording_pending' not in own
+        with database.session(write=True) as db:
+            db.add(VideoRecording(session_id='legacy-test-session',
+                                  object_key='test-recording', status='uploading',
+                                  created=1, completed=None, expires_at=0, part_count=0,
+                                  interrupted=0))
+        uploading = client.get('/api/market/me', headers=candidate_key).json()['assessments'][vacancy['id']]
+        assert uploading['recording_status'] == 'pending' and uploading['recording_pending'] is True
+        with database.session(write=True) as db:
+            db.delete(db.get(VideoRecording, 'legacy-test-session'))
         with database.session(write=True) as db:
             db.add(VideoRecording(session_id='legacy-test-session',
                                   object_key='test-recording', status='completed',

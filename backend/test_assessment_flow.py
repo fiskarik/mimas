@@ -118,7 +118,6 @@ def test_two_candidates_same_vacancy_and_tenant_isolation(monkeypatch):
                                json={'opportunity_id': opportunity_id, 'consent': True}).json()['id'] == session_id
             access = {'X-Interview-Token': candidate['X-Candidate-Token']}
             prefix = '/api/ai/sessions/' + session_id
-            assert client.post(prefix + '/start', headers=access).status_code == 409
             assert client.post(prefix + '/recording/init', headers=access).status_code == 200
             opened = client.post(prefix + '/start', headers=access)
             assert opened.status_code == 200, opened.text

@@ -233,6 +233,13 @@ def template_view(row: VacancyTemplate) -> dict:
             'created': row.created, 'approved': row.approved}
 
 
+def recording_state(recording) -> str:
+    """'none' is an interview taken without a camera; its report never waits for video."""
+    if recording is None:
+        return 'none'
+    return 'completed' if recording.status == 'completed' else 'pending'
+
+
 def approved_template(db, opportunity_id: str) -> VacancyTemplate | None:
     return db.scalar(select(VacancyTemplate).where(
         VacancyTemplate.opportunity_id == opportunity_id,
@@ -409,10 +416,8 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             if not session:
                 continue
             presented = session_view(session)
-            recording = recordings.get(item.session_id)
-            ready = bool(recording and recording.status == 'completed')
-            presented['recording_status'] = 'completed' if ready else 'pending'
-            if not ready and presented['report']:
+            presented['recording_status'] = recording_state(recordings.get(item.session_id))
+            if presented['recording_status'] == 'pending' and presented['report']:
                 presented['recording_pending'] = True
             views[item.opportunity_id] = presented
         assessment_opportunities = {
@@ -426,10 +431,8 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             if not session:
                 continue
             presented = session_view(session)
-            recording = recordings.get(item.session_id)
-            ready = bool(recording and recording.status == 'completed')
-            presented['recording_status'] = 'completed' if ready else 'pending'
-            if not ready and presented['report']:
+            presented['recording_status'] = recording_state(recordings.get(item.session_id))
+            if presented['recording_status'] == 'pending' and presented['report']:
                 presented['recording_pending'] = True
             presented['profession_id'] = item.profession_id
             presented['share_with_companies'] = bool(item.share_with_companies)
@@ -789,7 +792,7 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
             question_texts = {q['id']: q['text'] for q in public_session['questions']}
             item = {'profile': profile_view(profile), 'assessment_id': session.id,
                     'opportunity_id': assessment.opportunity_id, 'status': 'completed',
-                    'recording_status': 'completed' if recording and recording.status == 'completed' else 'pending',
+                    'recording_status': recording_state(recording),
                     'summary': report['overall_technical_summary'],
                     'skills': [{**{k: skill[k] for k in ('skill', 'demonstrated_level', 'status',
                                                        'answers_received', 'evaluated_answers')},
@@ -822,7 +825,7 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
         if not session or not profile:
             raise HTTPException(404, 'Отчёт не найден')
         presented = session_view(session)
-        presented['recording_status'] = 'completed' if recording and recording.status == 'completed' else 'pending'
+        presented['recording_status'] = recording_state(recording)
         if not presented['report']:
             raise HTTPException(409, 'Интервью ещё не завершено')
         return {'opportunity': opportunity_view(opportunity),

@@ -168,10 +168,14 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
             from backend.media import VideoRecording
             with database.session() as db:
                 recording = db.get(VideoRecording, row.id)
-            if not recording or recording.status != 'completed':
+            if recording is None:
+                # The camera is optional: an interview without it has no video to wait for.
+                result['recording_required'] = False
+                result['recording_status'] = 'none'
+            elif recording.status != 'completed':
                 # Uploading video must not hide an already completed text report.
                 result['recording_required'] = True
-                result['recording_status'] = recording.status if recording else 'none'
+                result['recording_status'] = recording.status
             else:
                 result['recording_required'] = False
                 result['recording_status'] = 'completed'
@@ -332,11 +336,7 @@ def register_ai_routes(app: FastAPI, database: Database, authorize_company):
         async with lock_for(iid):
             row = expire_locked(load(iid, x_interview_token))
             if InterviewState.model_validate_json(row.state).phase == Phase.CREATED:
-                from backend.media import VideoRecording
-                with database.session() as db:
-                    video = db.get(VideoRecording, iid)
-                if not video or video.status not in ('uploading', 'completed'):
-                    raise HTTPException(409, 'Включите камеру и начните запись перед интервью.')
+                # The camera is optional; without it the interview runs on the microphone alone.
                 from backend.monitor import assert_start_ready
                 assert_start_ready(database, iid, request.headers.get('user-agent', ''))
                 engine = restore(row)

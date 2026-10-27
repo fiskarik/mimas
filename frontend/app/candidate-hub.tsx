@@ -52,10 +52,30 @@ function demonstratedLevel(level:string|null):string {
 
 function mediaError(error:unknown):Error{
   const name=error instanceof DOMException?error.name:'';
-  if(name==='NotAllowedError'||name==='PermissionDeniedError')return new Error('Разрешите доступ к камере и микрофону в браузере и Windows, затем повторите попытку.');
-  if(name==='NotFoundError'||name==='DevicesNotFoundError')return new Error('Камера или микрофон не найдены. Подключите оба устройства и повторите попытку.');
-  if(name==='NotReadableError'||name==='TrackStartError')return new Error('Камеру или микрофон не удалось запустить. Закройте другие приложения, использующие их, и попробуйте снова.');
-  return new Error('Не удалось включить камеру и микрофон. Проверьте подключение и разрешения браузера.');
+  if(name==='NotAllowedError'||name==='PermissionDeniedError')return new Error('Разрешите доступ к микрофону в браузере и Windows, затем повторите попытку.');
+  if(name==='NotFoundError'||name==='DevicesNotFoundError')return new Error('Микрофон не найден. Подключите его и повторите попытку.');
+  if(name==='NotReadableError'||name==='TrackStartError')return new Error('Микрофон не удалось запустить. Закройте другие приложения, использующие его, и попробуйте снова.');
+  return new Error('Не удалось включить микрофон. Проверьте подключение и разрешения браузера.');
+}
+
+// The microphone is required; the camera is optional. They are requested separately,
+// so refusing the camera never blocks the microphone.
+async function openDevices():Promise<MediaStream>{
+  if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для голосового интервью нужен браузер с доступом к микрофону.');
+  let microphone:MediaStream;
+  try{microphone=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});}
+  catch(error){throw mediaError(error);}
+  if(!microphone.getAudioTracks().some(track=>track.readyState==='live')){
+    microphone.getTracks().forEach(track=>track.stop());
+    throw new Error('Микрофон не подключён. Проверьте устройство и повторите попытку.');
+  }
+  try{
+    const camera=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});
+    const live=camera.getVideoTracks().filter(track=>track.readyState==='live');
+    if(live.length)return new MediaStream([...microphone.getAudioTracks(),...live]);
+    camera.getTracks().forEach(track=>track.stop());
+  }catch{/* No camera or no permission: the interview continues without video. */}
+  return microphone;
 }
 
 export function CandidateHub(){
@@ -105,17 +125,7 @@ export function CandidateHub(){
     setBusy(true);setError('');
     let camera:MediaStream|null=null;
     try{
-      if(!finished){
-        if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для голосового интервью нужен браузер с доступом к камере и микрофону.');
-        try{
-          camera=await navigator.mediaDevices.getUserMedia({
-            video:{facingMode:'user'},
-            audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
-          });
-        }catch(error){throw mediaError(error);}
-        if(!camera.getVideoTracks().some(track=>track.readyState==='live'))throw new Error('Камера не подключена. Проверьте устройство и повторите попытку.');
-        if(!camera.getAudioTracks().some(track=>track.readyState==='live'))throw new Error('Микрофон не подключён. Проверьте устройство и повторите попытку.');
-      }
+      if(!finished)camera=await openDevices();
       const response=await fetch('/api/ai/sessions',{method:'POST',headers:{'X-Candidate-Token':token,'Content-Type':'application/json'},body:JSON.stringify({opportunity_id:job.id,consent:true}),cache:'no-store'});
       const body=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:'Не удалось открыть интервью.');
@@ -127,15 +137,7 @@ export function CandidateHub(){
     setBusy(true);setError('');
     let camera:MediaStream|null=null;
     try{
-      if(!finished){
-        if(!navigator.mediaDevices?.getUserMedia)throw new Error('Для голосового интервью нужен браузер с доступом к камере и микрофону.');
-        try{camera=await navigator.mediaDevices.getUserMedia({
-          video:{facingMode:'user'},
-          audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
-        });}catch(error){throw mediaError(error);}
-        if(!camera.getVideoTracks().some(track=>track.readyState==='live'))throw new Error('Камера не подключена. Проверьте устройство и повторите попытку.');
-        if(!camera.getAudioTracks().some(track=>track.readyState==='live'))throw new Error('Микрофон не подключён. Проверьте устройство и повторите попытку.');
-      }
+      if(!finished)camera=await openDevices();
       const response=await fetch('/api/ai/general-sessions',{method:'POST',headers:{'X-Candidate-Token':token,'Content-Type':'application/json'},body:JSON.stringify({profession_id:profession.id,consent:true,share_with_companies:finished?Boolean(generalAssessment?.share_with_companies):generalShareConsent}),cache:'no-store'});
       const body=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(typeof body.detail==='string'?body.detail:'Не удалось открыть общее интервью.');
@@ -212,7 +214,7 @@ export function CandidateHub(){
           </div>
           {consentProfession&&<div className="card market-assessment market-general-consent" aria-labelledby="general-consent-title">
             <span className="eyebrow">ПЕРЕД ОБЩИМ ИНТЕРВЬЮ</span><h2 id="general-consent-title">{consentProfession.name}</h2>
-            <p className="muted">Для разговора нужны камера и микрофон. MIMAS сохранит ответы и видео, а оценка будет предварительной. Подробное согласие на проверку событий браузера появится перед первым вопросом; расширение Chrome/Edge необязательно.</p>
+            <p className="muted">Для разговора нужен микрофон. Камера не обязательна: если её нет, интервью пройдёт без видео. MIMAS сохранит ответы, а оценка будет предварительной. Подробное согласие на проверку событий браузера появится перед первым вопросом; расширение Chrome/Edge необязательно.</p>
             <label className="market-consent"><input type="checkbox" checked={generalRecordingConsent} onChange={event=>setGeneralRecordingConsent(event.target.checked)}/> Я согласен(на) на запись общего интервью и обработку моих ответов.</label>
             <label className="market-consent"><input type="checkbox" checked={generalShareConsent} onChange={event=>setGeneralShareConsent(event.target.checked)}/> Я разрешаю показывать мой общий рейтинг и краткий отчёт одобренным компаниям. Это необязательно, настройку можно изменить позже. Видео доступно только мне.</label>
             <div className="button-row"><button className="primary" disabled={busy||!generalRecordingConsent} onClick={()=>void openGeneralInterview(consentProfession)}>{busy?<Loader2 size={17} className="spin"/>:<Video size={17}/>} Разрешить камеру и продолжить</button><button className="secondary" disabled={busy} onClick={()=>setConsentProfession(null)}>Отмена</button></div>
@@ -241,7 +243,7 @@ export function CandidateHub(){
         {consentJob&&<section className="card market-assessment" id="candidate-interview" aria-labelledby="market-consent-title"><span className="eyebrow">04 / ДОПОЛНИТЕЛЬНОЕ ИНТЕРВЬЮ</span><h2 id="market-consent-title">{consentJob.title} · {consentJob.company_name}</h2><p className="muted">MIMAS запросит доступ к камере и микрофону, запишет видео и ответы, передаст их для AI-оценки. Для голосового интервью нужны работающие камера и микрофон. Отчёт и запись смогут просматривать вы и компания «{consentJob.company_name}». Запись удаляется через 30 дней, текстовый отчёт сохраняется. Окончательное решение о найме принимает человек. Интервью проверяет знания и решения рабочих ситуаций, но не подтверждает практический навык или допуск к работе. Перед первым вопросом MIMAS отдельно запросит согласие на наблюдение за событиями браузера. На Windows отдельная программа не нужна. Расширение Chrome/Edge для проверки известных вкладок можно подключить по желанию.</p>
           <label className="market-consent"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/> Я согласен(на) на запись интервью и передачу результата этой компании.</label>
           <div className="button-row"><button className="primary" disabled={busy||!consent} onClick={()=>void openInterview(consentJob)}>{busy?<Loader2 size={17} className="spin"/>:<Video size={17}/>} Разрешить камеру и продолжить</button><button className="secondary" disabled={busy} onClick={()=>setConsentJob(null)}>Отмена</button></div>
-          <p className="tiny muted">Если камера или микрофон недоступны, интервью не начнётся. Проверьте разрешения браузера и повторите попытку.</p>
+          <p className="tiny muted">Без микрофона интервью не начнётся. Камера не обязательна: без неё интервью пройдёт без видео.</p>
         </section>}
       </>}
       <p className="market-footer"><ShieldCheck size={15}/> AI-оценка предварительная и не заменяет проверку практических навыков и допусков.</p>
