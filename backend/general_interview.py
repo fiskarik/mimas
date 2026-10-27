@@ -1,6 +1,9 @@
 """Shared profession interviews and consented, evidence-limited candidate rankings."""
+import hashlib
 import json
 import time
+from functools import cache
+from pathlib import Path
 
 from sqlalchemy import Float, ForeignKey, Integer, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,74 +32,17 @@ class GeneralAssessment(Base):
     created: Mapped[float] = mapped_column(Float)
 
 
-# Shared questions cover observable decisions in ordinary retail work. Oral
-# answers show knowledge of situations, not proven on-the-job performance.
-_RETAIL_CATALOG = (
-    ('cashier', 'Продавец-кассир', 'Кассовые операции и помощь покупателю', (
-        ('checkout', 'Точность расчёта на кассе',
-         ('Проверка цены', 'Контроль оплаты'),
-         ('Проверить действия при расхождении цены', 'Проверить предотвращение повторного списания'),
-         ('Цена товара на кассе отличается от ценника в зале. Как вы проверите ситуацию и что скажете покупателю?',
-          'Покупатель оплатил картой, но чек не появился. Что проверите до повторной оплаты?'),
-         ('Проверяет цену и обращается к ответственному по правилам магазина, не меняет её наугад',
-          'Уточняет статус операции до повторного списания и сообщает покупателю дальнейшие шаги')),
-        ('service', 'Обслуживание и сложные ситуации',
-         ('Работа с очередью', 'Решение вопроса покупателя'),
-         ('Проверить порядок действий при росте очереди', 'Проверить корректное разрешение обращения'),
-         ('Очередь растёт, а на кассе требуется проверить цену товара. Как будете действовать?',
-          'Покупатель сообщает, что в чеке лишний товар. Как проверите и решите вопрос?'),
-         ('Сохраняет точность расчёта, сообщает о задержке и при необходимости зовёт коллегу',
-          'Сверяет чек и покупки, действует по процедуре магазина без необоснованных обещаний')),
-    )),
-    ('sales_associate', 'Работник торгового зала', 'Выкладка, контроль товара и помощь покупателю', (
-        ('shelf', 'Выкладка и состояние товара',
-         ('Срок годности', 'Повреждённая упаковка'),
-         ('Проверить осмотр товара перед выкладкой', 'Проверить действия с повреждённым товаром'),
-         ('На полке товары с разными сроками годности. Как проверите их и разместите?',
-          'При выкладке заметили повреждённую упаковку. Что сделаете до возвращения товара на полку?'),
-         ('Проверяет даты и размещает товар по правилам ротации магазина',
-          'Отделяет товар от продажи и сообщает ответственному по правилам магазина')),
-        ('help', 'Помощь покупателю',
-         ('Поиск товара', 'Уточнение информации'),
-         ('Проверить помощь с поиском', 'Проверить ответ без выдуманных сведений'),
-         ('Покупатель не может найти нужный товар. Как поможете, если на полке его нет?',
-          'Покупатель спрашивает состав товара, а вы не уверены. Как ответите?'),
-         ('Проверяет наличие или обращается к коллеге и предлагает понятный следующий шаг',
-          'Проверяет информацию на упаковке или у ответственного, не придумывает состав')),
-    )),
-    ('order_picker', 'Сборщик заказов', 'Точность сборки и безопасная передача заказа', (
-        ('accuracy', 'Точность сборки заказа',
-         ('Сверка наименования', 'Замена отсутствующего товара'),
-         ('Проверить сверку товара с заказом', 'Проверить согласование замены'),
-         ('В заказе несколько похожих упаковок одного товара. Как проверите, что взяли нужные?',
-          'Нужного товара нет на полке. Как поступите с возможной заменой?'),
-         ('Сверяет наименование, объём, количество и код товара с заказом',
-          'Не подменяет товар по своему усмотрению, действует по правилам согласования')),
-        ('handoff', 'Упаковка и передача заказа',
-         ('Хрупкие товары', 'Товары с разным режимом хранения'),
-         ('Проверить защиту товара при упаковке', 'Проверить передачу с учётом условий хранения'),
-         ('В заказе стеклянная банка и тяжёлые товары. Как упакуете их?',
-          'В заказе есть охлаждённые и обычные товары. Как организуете сборку и передачу?'),
-         ('Разделяет хрупкие и тяжёлые товары и проверяет целостность упаковки',
-          'Учитывает условия хранения и не оставляет охлаждённые товары вне нужного режима')),
-    )),
-    ('stock_worker', 'Работник склада', 'Приёмка, учёт и хранение товара', (
-        ('receiving', 'Приёмка и учёт товара',
-         ('Сверка поставки', 'Фиксация расхождений'),
-         ('Проверить сверку факта с документом', 'Проверить действия при недостаче'),
-         ('Пришла поставка. Как сверите количество и состояние товара с сопроводительными данными?',
-          'В поставке не хватает нескольких единиц товара. Что зафиксируете и кому сообщите?'),
-         ('Сверяет наименование, количество и состояние товара с документами или системой',
-          'Отмечает расхождение и сообщает ответственному до завершения приёмки')),
-        ('storage', 'Хранение и перемещение товара',
-         ('Условия хранения', 'Безопасное перемещение'),
-         ('Проверить выбор места хранения', 'Проверить безопасную организацию перемещения'),
-         ('Приняли товары с разными условиями хранения. Как распределите их по зонам?',
-          'Нужно переместить тяжёлые коробки, а проход частично занят. Как поступите?'),
-         ('Сверяет условия хранения и размещает товары в подходящих зонах',
-          'Освобождает проход и выбирает безопасный способ перемещения, при необходимости просит помощь')),
-    )),
-)
+# Reviewed retail templates in format v2 (question cards), one file per profession.
+# Oral answers show knowledge of situations, not proven on-the-job performance.
+_TEMPLATE_DIR = Path(__file__).resolve().parent / 'professions'
+_RETAIL_IDS = ('cashier', 'sales_associate', 'order_picker', 'stock_worker')
+
+
+@cache
+def _retail_templates() -> tuple[dict, ...]:
+    return tuple(json.loads((_TEMPLATE_DIR / f'{identifier}.json').read_text(encoding='utf-8'))
+                 for identifier in _RETAIL_IDS)
+
 
 # Keep historical plans addressable so completed interviews and existing
 # vacancies remain readable; they are not offered as new pilot choices.
@@ -168,11 +114,31 @@ _LEGACY_CATALOG = (
 )
 
 
-_CATALOG = _RETAIL_CATALOG + _LEGACY_CATALOG
+# Catalog texts installed by earlier versions. A row that still holds one of them
+# was never edited by a reviewer, so a newer catalog version may replace it.
+_PRISTINE_FINGERPRINTS = {
+    ('cashier', 1): 'a9de1c70d0fe53ba16d6d154ea3f336879f647b02cf0a583a8df3ffe854e5109',
+    ('sales_associate', 1): '20989dd805d1a324ad508064da40e2bc6261529c073339716db8496df53d90ed',
+    ('order_picker', 1): '28f9a4b84c507f9ae13d4633cc2a938266ea904d2c1ce5e4d469243371a7f735',
+    ('stock_worker', 1): '0d55df1b1d3e19284991fa163319a5303ff8c99fdcb93f20f36248303fbd2058',
+}
+
+
+def _fingerprint(row: 'Profession') -> str:
+    canonical = json.dumps({'name': row.name, 'description': row.description,
+                            'plan': json.loads(row.plan_json), 'settings': json.loads(row.settings_json)},
+                           ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+@cache
+def _names() -> dict[str, str]:
+    return {**{template['id']: template['name'] for template in _retail_templates()},
+            **{identifier: name for identifier, name, _, _ in _LEGACY_CATALOG}}
 
 
 def active_profession_ids() -> tuple[str, ...]:
-    return tuple(identifier for identifier, _, _, _ in _RETAIL_CATALOG)
+    return _RETAIL_IDS
 
 
 _PROFESSION_ALIASES = {
@@ -189,13 +155,12 @@ _PROFESSION_ALIASES = {
 def profession_id_for_name(name: str) -> str | None:
     normalized = name.strip().casefold()
     return _PROFESSION_ALIASES.get(normalized) or next(
-        (identifier for identifier, title, _, _ in _CATALOG
+        (identifier for identifier, title in _names().items()
          if title.casefold() == normalized), None)
 
 
 def profession_name_for_id(identifier: str) -> str | None:
-    return next((title for item_id, title, _, _ in _CATALOG
-                 if item_id == identifier), None)
+    return _names().get(identifier)
 
 
 def profession_view(row: Profession) -> dict:
@@ -203,36 +168,66 @@ def profession_view(row: Profession) -> dict:
             'version': row.version}
 
 
-def ensure_professions(database: Database) -> None:
-    """Install reviewed pilot plans after migrations; never replace edited rows."""
+def _catalog():
+    """Every installable profession: id, name, description, version, plan, settings."""
     from ai_core.interview.planner import CompetencyPlan
     from backend.marketplace import InterviewSettings
 
+    for template in _retail_templates():
+        plan = CompetencyPlan.model_validate({
+            'role': template['name'], 'version': f"profession-{template['id']}-v{template['version']}",
+            'not_assessed': template['not_assessed'], 'skills': template['skills']})
+        yield (template['id'], template['name'], template['description'], template['version'],
+               plan, InterviewSettings.model_validate(template['settings']))
+    for identifier, name, description, groups in _LEGACY_CATALOG:
+        skills = []
+        for skill_id, title, concepts, goals, questions, criteria in groups:
+            skills.append({'id': f'{identifier}.{skill_id}', 'name': title,
+                           'concepts': list(concepts), 'goals': list(goals),
+                           'questions': list(questions), 'evaluation_criteria': list(criteria),
+                           'target_questions': 2})
+        plan = CompetencyPlan.model_validate({'role': name,
+                                              'version': f'profession-{identifier}-v1',
+                                              'skills': skills})
+        yield (identifier, name, description, 1, plan,
+               InterviewSettings(max_questions=4, max_follow_ups=0, duration_minutes=10))
+
+
+def ensure_professions(database: Database) -> None:
+    """Install reviewed pilot plans after migrations; never replace edited rows.
+
+    A newer catalog version replaces a row only while it still holds the exact
+    text of an earlier catalog version. Started interviews keep their snapshot.
+    """
     with database.session(write=True) as db:
-        for identifier, name, description, groups in _CATALOG:
-            if db.get(Profession, identifier):
-                continue
-            skills = []
-            for skill_id, title, concepts, goals, questions, criteria in groups:
-                skills.append({'id': f'{identifier}.{skill_id}', 'name': title,
-                               'concepts': list(concepts), 'goals': list(goals),
-                               'questions': list(questions), 'evaluation_criteria': list(criteria),
-                               'target_questions': 2})
-            plan = CompetencyPlan.model_validate({'role': name,
-                                                  'version': f'profession-{identifier}-v1',
-                                                  'skills': skills})
-            settings = InterviewSettings(max_questions=4, max_follow_ups=0,
-                                         duration_minutes=10)
-            db.add(Profession(id=identifier, name=name, description=description,
-                              version=1, plan_json=plan.model_dump_json(),
-                              settings_json=settings.model_dump_json(), approved_at=time.time()))
+        for identifier, name, description, version, plan, settings in _catalog():
+            content = {'name': name, 'description': description, 'version': version,
+                       'plan_json': plan.model_dump_json(), 'settings_json': settings.model_dump_json(),
+                       'approved_at': time.time()}
+            row = db.get(Profession, identifier)
+            if row is None:
+                db.add(Profession(id=identifier, **content))
+            elif (row.version < version
+                  and _PRISTINE_FINGERPRINTS.get((identifier, row.version)) == _fingerprint(row)):
+                for key, value in content.items():
+                    setattr(row, key, value)
 
 
 def provisional_rating(report: dict) -> dict:
-    """Average only answers with verified citations; never treat unscored as zero."""
-    reviewed = report.get('answer_reviews') or []
-    points = [item['points'] for item in reviewed
-              if item.get('status') == 'assessed' and isinstance(item.get('points'), int)]
+    """Average only answers with verified citations; never treat unscored as zero.
+
+    Template v2 reports score each question once (its best answer, red flags applied).
+    """
+    cards = report.get('card_scores')
+    if cards is not None:
+        points = [item['points'] for item in cards
+                  if item.get('status') == 'assessed' and isinstance(item.get('points'), int)]
+        total = len(cards)
+    else:
+        reviewed = report.get('answer_reviews') or []
+        points = [item['points'] for item in reviewed
+                  if item.get('status') == 'assessed' and isinstance(item.get('points'), int)]
+        total = len(reviewed)
     return {'score': round(sum(points) / len(points), 1) if points else None,
-            'assessed_answers': len(points), 'total_answers': len(reviewed),
+            'assessed_answers': len(points), 'total_answers': total,
             'max_score': 5, 'provisional': True}

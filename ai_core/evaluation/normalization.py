@@ -57,7 +57,49 @@ def scoped_question_text(text: str, goal: str) -> str:
 
 def validate_grounding(result: EvaluationResult, answer: str) -> EvaluationResult:
     """Reject the entire unsupported assessment, not just its citations."""
-    for item in [*result.evidence, *result.misconceptions]:
+    for item in [*result.evidence, *result.misconceptions, *result.red_flags]:
         if item.quote not in answer:
             raise ValueError('Evidence quote absent from answer')
     return result
+
+
+def prepare_card_output(data: dict, card: dict) -> dict:
+    """Name the approved probe as the follow-up goal when the model left it empty."""
+    if not isinstance(data, dict) or not data.get('follow_up_required'):
+        return data
+    probe = data.get('probe_index')
+    if str(data.get('follow_up_goal') or '').strip():
+        return data
+    if isinstance(probe, int) and 0 <= probe < len(card['probes']):
+        return {**data, 'follow_up_goal': card['probes'][probe]}
+    return {**data, 'follow_up_required': False}
+
+
+def apply_card(result: EvaluationResult, card: dict) -> EvaluationResult:
+    """Enforce template v2 rules the model cannot be trusted to follow."""
+    behavioral = card['type'] == 'behavioral'
+    if behavioral and result.response_kind == 'substantive' and result.star is None:
+        raise ValueError('Behavioral card requires a STAR check')
+    if any(flag.index >= len(card['red_flags']) for flag in result.red_flags):
+        raise ValueError('Unknown red flag')
+    level = result.anchor_level
+    if result.response_kind != 'substantive' or result.correctness == 'insufficient_evidence':
+        level = None
+    elif behavioral and not (result.star.situation and result.star.action):
+        # No real example or own action: insufficient data, never a low score.
+        level = None
+    elif level is None:
+        raise ValueError('Anchored card requires anchor_level')
+    probe = result.probe_index if result.follow_up_required else None
+    if probe is not None and probe >= len(card['probes']):
+        probe = None
+    return result.model_copy(update={
+        'anchor_level': level, 'star': result.star if behavioral else None,
+        'probe_index': probe, 'follow_up_required': probe is not None,
+        'follow_up_goal': result.follow_up_goal if probe is not None else '',
+        'follow_up_question': None})
+
+
+def strip_card_fields(result: EvaluationResult) -> EvaluationResult:
+    return result.model_copy(update={'anchor_level': None, 'red_flags': [],
+                                     'probe_index': None, 'star': None})

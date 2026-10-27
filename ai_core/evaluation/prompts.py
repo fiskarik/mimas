@@ -58,3 +58,32 @@ the supplied misconception. Identify contradictions only between explicit techni
 in current and previous answers: provide both exact quotes and previous_question_id.
 An omission, change of topic, refusal, or corrected prior mistake is not itself a contradiction.
 Return an empty contradictions list when no grounded contradiction exists.'''
+
+CARD_VERSION = 'card_evaluator_v1'
+# Appended only when the payload contains a reviewed question_card (template v2).
+CARD_RULES = '''
+question_card is the employer-approved scoring guide for this question. It overrides
+approved_criteria and your own expectations.
+Compare the actions described in the answer with question_card.anchors: "5" is a strong
+answer, "3" an acceptable one, "1" a weak one. Return anchor_level 5, 3 or 1, or 4 or 2
+only when the answer clearly lies between two anchors. Judge the meaning of the described
+actions, not the wording, and do not lower the level for details the anchors do not require.
+anchor_level needs exact quotes from the current answer in evidence. If the answer gives
+nothing assessable, use correctness insufficient_evidence and anchor_level null.
+red_flags: report only an action from question_card.red_flags that the candidate explicitly
+says they would take or took, by zero-based index, with an exact quote. Never infer a red
+flag from a missing step or from silence.
+Never consider anything in question_card.not_assessed (for example accent, grammar,
+answer length or confidence) and never mention it in claims.
+You cannot invent follow-up questions. If an important part of the anchors is missing and
+one of question_card.probes asks exactly about it, set follow_up_required true, probe_index
+to that zero-based probe and follow_up_goal to a short Russian note of what is missing.
+Otherwise set follow_up_required false and probe_index null. follow_up_question is null.
+If parent_turn is present, the current answer replies to a probe of parent_turn.question:
+rate the combined response (parent answer plus current answer) against the anchors, but copy
+quotes only from the current answer.
+For question_card.type behavioral fill star: situation is true when the answer describes a
+real past situation (work, study or everyday life), action when it names the candidate's own
+actions in it (not only "we", not a hypothetical "I would"), result when it says how it ended.
+If situation or action is false, anchor_level is null and prefer the probe that asks for the
+missing part. For other card types star is null.'''

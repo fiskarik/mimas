@@ -1,12 +1,13 @@
 """Single-session engine. Transitions and limits are controlled only by Python."""
+import random
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 
 from ai_core.evaluation.evaluator import AnswerEvaluator
 from ai_core.interview.assessment import apply_evaluation
-from ai_core.interview.decision_engine import Action, Decision, decide
-from ai_core.interview.planner import CompetencyPlan, load_plan
+from ai_core.interview.decision_engine import Action, Decision, decide, decide_card
+from ai_core.interview.planner import CompetencyPlan, QuestionCard, load_plan
 from ai_core.interview.question_selector import QuestionGenerator, VERSION as QUESTION_VERSION
 from ai_core.interview.schemas import CandidateAnswer, InterviewInput, Limits, Question, QuestionSpec
 from ai_core.interview.state import InterviewState, Phase, SkillState
@@ -27,6 +28,8 @@ TRANSITIONS = {
     Phase.NEXT_SKILL: {Phase.SELECT_SKILL},
     Phase.FINAL_REVIEW: {Phase.COMPLETED}, Phase.COMPLETED: set(),
 }
+CARD_QUESTION_TYPES = {'situational': QuestionType.SCENARIO, 'behavioral': QuestionType.BEHAVIORAL,
+                       'knowledge': QuestionType.CONCEPTUAL}
 
 
 class InterviewEngine:
@@ -146,7 +149,15 @@ class InterviewEngine:
             return None
         skill = self.state.skills[self.state.skill_index]
         competency = self.plan.skills[self.state.skill_index]
-        if decision and decision.action in (Action.FOLLOW_UP, Action.VERIFICATION, Action.VERIFY_INTEGRITY):
+        if decision and decision.probe_index is not None:
+            # Template v2: an approved probe of the card that was just answered.
+            previous = self.state.questions[-1]
+            spec = QuestionSpec(skill=skill.skill, difficulty=skill.difficulty, type=QuestionType.FOLLOW_UP,
+                                goal=previous.goal, parent_id=previous.parent_id or previous.id,
+                                card_index=previous.card_index, probe_index=decision.probe_index)
+            spec.action = decision.action.value
+            self.state.follow_up_count += 1
+        elif decision and decision.action in (Action.FOLLOW_UP, Action.VERIFICATION, Action.VERIFY_INTEGRITY):
             previous = self.state.questions[-1]
             spec = QuestionSpec(skill=skill.skill, difficulty=skill.difficulty,
                                 type=QuestionType.VERIFICATION if decision.action in (Action.VERIFICATION, Action.VERIFY_INTEGRITY) else QuestionType.FOLLOW_UP,
@@ -168,6 +179,12 @@ class InterviewEngine:
                 spec.verification_id = verification.id
                 self.record('verification_started', verification=verification.model_dump(mode='json'))
             self.state.follow_up_count += 1
+        elif competency.cards:
+            self.state.follow_up_count = 0
+            card = competency.cards[skill.primary_questions]
+            spec = QuestionSpec(skill=skill.skill, difficulty=skill.difficulty,
+                                type=CARD_QUESTION_TYPES[card.type], goal=card.goal,
+                                card_index=skill.primary_questions)
         else:
             self.state.follow_up_count = 0
             index = skill.primary_questions % len(competency.goals)
@@ -187,23 +204,11 @@ class InterviewEngine:
         skill = self.state.skills[self.state.skill_index]
         competency = self.plan.skills[self.state.skill_index]
         verification = next((v for v in self.state.verification_history if v.id == spec.verification_id), None)
-        source = next((t for t in self.state.turns if verification and t.question.id == verification.source_question_id), None)
-        precomputed_follow_up_question = None
-        if (spec.action == Action.FOLLOW_UP.value and self.state.next_action
-                and self.state.next_action.get('reason') == 'specific_uncertainty'
-                and self.state.turns):
-            assessment = self.state.turns[-1].evaluation.result
-            if assessment and assessment.follow_up_required and assessment.follow_up_goal == spec.goal:
-                precomputed_follow_up_question = assessment.follow_up_question
-        question = await self.generator.generate(
-            spec, competency, self.state.config.target_level, self.state.questions,
-            [e.model_dump(mode='json') for e in skill.evidence],
-            [m.model_dump(mode='json') for m in skill.misconceptions], skill.primary_questions,
-            {'action': spec.action, 'candidate_answer': source.answer.text if source else None,
-             'verification': verification.model_dump(mode='json') if verification else None,
-             'contradictions': [c.model_dump(mode='json') for c in self.state.contradictions if c.skill == skill.skill],
-             'candidate_context': self.state.candidate_context},
-            precomputed_follow_up_question=precomputed_follow_up_question)
+        if spec.card_index is not None and competency.cards:
+            # Template v2 questions are asked verbatim; no model writes them.
+            question = self._card_question(spec, competency.cards[spec.card_index])
+        else:
+            question = await self._generated_question(spec, skill, competency, verification)
         if self.elapsed >= self.limits.time_budget_seconds:
             self.complete('time_budget')
             return None
@@ -221,6 +226,46 @@ class InterviewEngine:
         self.transition(Phase.WAITING_FOR_ANSWER)
         self.checkpoint()
         return question
+
+    async def _generated_question(self, spec: QuestionSpec, skill: SkillState, competency, verification) -> Question:
+        source = next((t for t in self.state.turns if verification and t.question.id == verification.source_question_id), None)
+        precomputed_follow_up_question = None
+        if (spec.action == Action.FOLLOW_UP.value and self.state.next_action
+                and self.state.next_action.get('reason') == 'specific_uncertainty'
+                and self.state.turns):
+            assessment = self.state.turns[-1].evaluation.result
+            if assessment and assessment.follow_up_required and assessment.follow_up_goal == spec.goal:
+                precomputed_follow_up_question = assessment.follow_up_question
+        return await self.generator.generate(
+            spec, competency, self.state.config.target_level, self.state.questions,
+            [e.model_dump(mode='json') for e in skill.evidence],
+            [m.model_dump(mode='json') for m in skill.misconceptions], skill.primary_questions,
+            {'action': spec.action, 'candidate_answer': source.answer.text if source else None,
+             'verification': verification.model_dump(mode='json') if verification else None,
+             'contradictions': [c.model_dump(mode='json') for c in self.state.contradictions if c.skill == skill.skill],
+             'candidate_context': self.state.candidate_context},
+            precomputed_follow_up_question=precomputed_follow_up_question)
+
+    def _card_question(self, spec: QuestionSpec, card: QuestionCard) -> Question:
+        if spec.probe_index is not None:
+            return Question(**spec.model_dump(), text=card.probes[spec.probe_index], generation='approved_template')
+        wordings = [card.question, *card.variants]
+        asked = {question.text for question in self.state.questions}
+        # Seeded by the interview, so a retried or resumed question keeps its wording.
+        start = random.Random(f'{self.state.interview_id}:{spec.skill}:{spec.card_index}').randrange(len(wordings))
+        variant = start
+        for offset in range(len(wordings)):
+            if wordings[(start + offset) % len(wordings)] not in asked:
+                variant = (start + offset) % len(wordings)
+                break
+        return Question(**spec.model_dump(), text=wordings[variant], generation='approved_template', variant=variant)
+
+    def _reserved_card_questions(self) -> int:
+        """Planned card questions still to ask after the current one; probes never displace them."""
+        index = self.state.skill_index
+        current = self.plan.skills[index]
+        remaining = min(current.target_questions, len(current.cards)) - self.state.skills[index].primary_questions
+        return max(0, remaining) + sum(min(s.target_questions, len(s.cards)) for s in self.plan.skills[index + 1:])
 
     async def submit(self, question_id: str, text: str) -> Question | None:
         if self.state.phase != Phase.WAITING_FOR_ANSWER:
@@ -242,13 +287,18 @@ class InterviewEngine:
         skill = self.state.skills[self.state.skill_index]
         misconception = next((m for m in skill.misconceptions if m.id == question.misconception_id), None)
         verification = next((v for v in self.state.verification_history if v.id == question.verification_id), None)
+        card = self.plan.card_for(question.skill, question.card_index)
+        parent = next(({'question': t.question.text, 'answer': t.answer.text} for t in self.state.turns
+                       if card and t.question.id == question.parent_id), None)
         attempt = await self.evaluator.evaluate(question, answer.text, self.state.config.target_level,
                                                 [e.model_dump(mode='json') for e in skill.evidence],
                                                 misconception.model_dump(mode='json') if misconception else None,
                                                 [{'question_id': t.question.id, 'question': t.question.text, 'answer': t.answer.text}
                                                  for t in self.state.turns if t.question.skill == question.skill],
                                                 verification.model_dump(mode='json') if verification else None,
-                                                self.plan.skills[self.state.skill_index].evaluation_criteria)
+                                                None if card else self.plan.skills[self.state.skill_index].evaluation_criteria,
+                                                card=card.evaluator_view(self.plan.not_assessed) if card else None,
+                                                parent=parent)
         apply_evaluation(self.state, self.limits, question, answer, attempt, self.record)
         self.transition(Phase.DECIDE_NEXT_ACTION)
         self.state.next_action = None
@@ -259,9 +309,16 @@ class InterviewEngine:
         skill = self.state.skills[self.state.skill_index]
         result = self.state.turns[-1].evaluation.result if self.state.turns else None
         competency = self.plan.skills[self.state.skill_index]
-        decision = Decision.model_validate(self.state.next_action) if self.state.next_action else decide(
-            skill, result, self.limits, len(self.state.questions), self.elapsed,
-            self.state.follow_up_count, min(competency.target_questions, len(competency.goals)), self.state)
+        if self.state.next_action:
+            decision = Decision.model_validate(self.state.next_action)
+        elif competency.cards:
+            decision = decide_card(skill, result, self.limits, len(self.state.questions), self.elapsed,
+                                   self.state.follow_up_count, min(competency.target_questions, len(competency.cards)),
+                                   self._reserved_card_questions())
+        else:
+            decision = decide(skill, result, self.limits, len(self.state.questions), self.elapsed,
+                              self.state.follow_up_count, min(competency.target_questions, len(competency.goals)),
+                              self.state)
         self.state.next_action = decision.model_dump(mode='json')
         self.record('decision', **self.state.next_action)
         self.checkpoint()

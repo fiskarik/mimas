@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Float, ForeignKey, Integer, Text, UniqueConstraint, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ai_core.interview.planner import CompetencyPlan
+from ai_core.interview.planner import CompetencyPlan, plan_json_schema
 from ai_core.llm.base import ProviderError
 from ai_core.llm.factory import create_llm_provider
 from backend.companies import company_from_key
@@ -623,7 +623,7 @@ def register_marketplace_routes(app: FastAPI, database: Database, authorize_comp
                   'или допуск к работе. Не принимай решение о найме.')
         try:
             raw = await provider.generate(system=system, payload={'vacancy': context},
-                                          schema=CompetencyPlan.model_json_schema(), operation='template')
+                                          schema=plan_json_schema(), operation='template')
             draft = _validate_plan(json.loads(raw), vacancy, version)
         except BudgetExceeded:
             raise HTTPException(429, 'Месячный лимит AI исчерпан') from None

@@ -1,8 +1,8 @@
 'use client';
 
 type Finding = {claim:string; quote:string};
-export type AnswerReview = {question_id:string; skill:string; question:string; answer:string; points:number|null; max_points:number; reason:string; strengths:Finding[]; errors:Finding[]; uncertainties:Finding[]; missing_concepts:string[]; follow_up_goal:string; failures:string[]};
-export type ScoringRubric = {description:string; rules:string[]};
+export type AnswerReview = {question_id:string; skill:string; question:string; answer:string; points:number|null; max_points:number; reason:string; strengths:Finding[]; errors:Finding[]; uncertainties:Finding[]; missing_concepts:string[]; follow_up_goal:string; failures:string[]; anchor?:{level:number; description:string}|null; red_flags?:Finding[]};
+export type ScoringRubric = {description:string; rules:string[]; not_assessed?:string[]};
 
 function HighlightedAnswer({text, errors}:{text:string; errors:Finding[]}) {
   const ranges:{start:number; end:number}[]=[];
@@ -24,12 +24,14 @@ export function AnswerReport({reviews,rubric,names}:{reviews:AnswerReview[];rubr
   return <section className="answer-reviews" aria-label="Разбор ответов">
     <h2>Баллы и разбор каждого ответа</h2>
     <p className="muted">AI оценивает только содержание устного ответа: профессиональные знания и решения рабочих ситуаций. Подсвеченные фрагменты показывают основания замечаний. Практический навык и допуск к работе здесь не подтверждаются.</p>
-    {rubric&&<details className="card scoring-rubric"><summary>Как считаются баллы от 0 до 5</summary><p>{rubric.description}</p><ul>{rubric.rules.map(rule=><li key={rule}>{rule}</li>)}</ul></details>}
+    {rubric&&<details className="card scoring-rubric"><summary>Как считаются баллы от 0 до 5</summary><p>{rubric.description}</p><ul>{rubric.rules.map(rule=><li key={rule}>{rule}</li>)}</ul>{rubric.not_assessed?.length?<p>Не влияет на балл: {rubric.not_assessed.join(', ')}.</p>:null}</details>}
     {!reviews.length&&<p className="note">Пока нет сохранённых ответов для разбора.</p>}
     {reviews.map((review,index)=><article className="card answer-review" key={review.question_id}>
       <header><div><span className="eyebrow">ОТВЕТ {index+1} · {names[review.skill]||review.skill}</span><h3>{review.question}</h3></div><div className={`answer-points ${review.points===null?'unrated':review.points>=4?'good':review.points>=2?'partial':'weak'}`} aria-label={review.points===null?'Ответ не оценён':`Балл за ответ: ${review.points} из ${review.max_points}`}><strong>{review.points===null?'—':review.points}</strong><span>{review.points===null?'Не оценено':`из ${review.max_points}`}</span></div></header>
       <p className="score-reason">{review.reason}</p>
-      <h4>Ваш ответ</h4><HighlightedAnswer text={review.answer} errors={review.errors}/>
+      {review.anchor&&<p className="score-anchor">Ближе всего к описанию: «{review.anchor.description}»</p>}
+      <h4>Ваш ответ</h4><HighlightedAnswer text={review.answer} errors={[...review.errors,...(review.red_flags||[])]}/>
+      {review.red_flags?.length?<section className="review-red-flags"><h4>Красные флаги</h4>{review.red_flags.map((flag,i)=><div className="review-finding" key={i}><p>{flag.claim}</p><blockquote>{flag.quote}</blockquote></div>)}</section>:null}
       <div className="review-findings">
         <section className="review-errors"><h4>Где ошибка</h4>{review.errors.length?review.errors.map((e,i)=><div className="review-finding" key={i}><blockquote>{e.quote}</blockquote><p>{e.claim}</p></div>):<p className="muted">{review.points===null?'Ответ не оценён; подтверждённых ошибок в объяснении нет.':'AI не отметил конкретных ошибок в объяснении.'}</p>}</section>
         <section className="review-strengths"><h4>Что засчитано</h4>{review.strengths.length?review.strengths.map((e,i)=><div className="review-finding" key={i}><p>{e.claim}</p><blockquote>{e.quote}</blockquote></div>):<p className="muted">Нет подтверждённых пунктов.</p>}</section>

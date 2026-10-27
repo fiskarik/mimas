@@ -31,12 +31,17 @@ class QuestionSpec(Model):
     goal: Text
     parent_id: str | None = None
     misconception_id: str | None = None
+    # Template v2: the card this question belongs to and the approved probe used.
+    card_index: int | None = Field(default=None, ge=0)
+    probe_index: int | None = Field(default=None, ge=0)
 
 
 class Question(QuestionSpec):
     id: str = Field(default_factory=lambda: uuid4().hex)
     text: Text
     generation: Literal['llm', 'fallback', 'scripted', 'approved_template'] = 'llm'
+    # Template v2: 0 is the main wording, 1+ are card variants.
+    variant: int | None = Field(default=None, ge=0)
 
 
 class GeneratedQuestion(Model):

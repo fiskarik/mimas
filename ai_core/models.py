@@ -27,6 +27,7 @@ class QuestionType(StrEnum):
     FOLLOW_UP = 'follow_up'
     VERIFICATION = 'verification'
     CODE_REASONING = 'code_reasoning'
+    BEHAVIORAL = 'behavioral'
 
 
 class EvidenceType(StrEnum):

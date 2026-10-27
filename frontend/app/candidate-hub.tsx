@@ -184,7 +184,7 @@ export function CandidateHub(){
                 {result.skills.length===0?<p className={styles.empty}>В отчёте нет навыков с сохранёнными ответами. Подробности доступны в полном отчёте.</p>:<div className={styles.skillGrid}>{result.skills.map(skill=>{
                   const positive=skill.evidence?.find(item=>item.type==='positive'&&item.claim);
                   return <article className={styles.skill} key={skill.skill}>
-                    <div className={styles.skillHeading}><strong>{skill.name||skill.skill}</strong><span className={skill.demonstrated_level?styles.assessed:styles.insufficient}>{skill.demonstrated_level?`Предварительно: ${demonstratedLevel(skill.demonstrated_level)}`:'Недостаточно данных'}</span></div>
+                    <div className={styles.skillHeading}><strong>{skill.name||skill.skill}</strong><span className={skill.demonstrated_level||typeof skill.score==='number'?styles.assessed:styles.insufficient}>{typeof skill.score==='number'?`Предварительно: ${skill.score} из 5`:skill.demonstrated_level?`Предварительно: ${demonstratedLevel(skill.demonstrated_level)}`:'Недостаточно данных'}</span></div>
                     <p>{skill.evaluated_answers>0?`${skill.evaluated_answers} из ${skill.answers_received} ответов оценено`:'Ответ сохранён, но AI не смог его оценить'}</p>
                     {positive&&<p className={styles.evidence}>По ответу: {positive.claim}</p>}
                   </article>;

@@ -24,6 +24,30 @@ class Decision(Model):
     goal: str = ''
     misconception_id: str | None = None
     target_id: str | None = None
+    probe_index: int | None = None
+
+
+def decide_card(skill: SkillState, result: EvaluationResult | None, limits: Limits, total: int,
+                elapsed: float, follow_ups: int, target_questions: int, reserved: int) -> Decision:
+    """Template v2: every planned card is asked; probes only use spare question budget.
+
+    ``reserved`` is the number of planned primary questions still to come after this one.
+    """
+    if total >= limits.max_questions:
+        if reserved == 0 and skill.primary_questions >= target_questions:
+            # Every card was asked: the plan is complete, not cut off by the limit.
+            return Decision(action=Action.NEXT_SKILL, reason='planned_coverage_reached')
+        return Decision(action=Action.FINISH, reason='max_questions')
+    if elapsed >= limits.time_budget_seconds:
+        return Decision(action=Action.FINISH, reason='time_budget')
+    probe = result.probe_index if result and result.follow_up_required else None
+    if (probe is not None and follow_ups < limits.max_follow_ups_per_question
+            and total + 1 + reserved <= limits.max_questions):
+        return Decision(action=Action.FOLLOW_UP, reason='approved_probe',
+                        goal=result.follow_up_goal, probe_index=probe)
+    if skill.primary_questions >= target_questions or skill.questions_asked >= limits.max_questions_per_skill:
+        return Decision(action=Action.NEXT_SKILL, reason='planned_coverage_reached')
+    return Decision(action=Action.NEXT_QUESTION, reason='next_card')
 
 
 def decide(skill: SkillState, result: EvaluationResult | None, limits: Limits,
