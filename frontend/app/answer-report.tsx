@@ -2,7 +2,23 @@
 
 type Finding = {claim:string; quote:string};
 export type AnswerReview = {question_id:string; skill:string; question:string; answer:string; points:number|null; max_points:number; reason:string; strengths:Finding[]; errors:Finding[]; uncertainties:Finding[]; missing_concepts:string[]; follow_up_goal:string; failures:string[]; anchor?:{level:number; description:string}|null; red_flags?:Finding[]};
-export type ScoringRubric = {description:string; rules:string[]; not_assessed?:string[]};
+export type ScoringRubric = {description:string; rules:string[]; not_assessed?:string[]; max_points?:number};
+export type OverallRating = {score:number|null; assessed_answers:number; total_answers:number; max_score:number};
+
+// Scores are 1-10; older reports stay readable through review.max_points.
+function scoreTone(points:number|null,max:number){
+  if(points===null)return 'unrated';
+  const share=points/max;
+  return share>=0.7?'good':share>=0.4?'partial':'weak';
+}
+
+export function OverallScore({rating}:{rating?:OverallRating|null}){
+  if(!rating)return null;
+  return <div className={`card overall-score ${scoreTone(rating.score,rating.max_score)}`} aria-label={rating.score===null?'Итоговый балл не выставлен':`Итоговый балл: ${rating.score} из ${rating.max_score}`}>
+    <div className="overall-score-value"><strong>{rating.score===null?'—':rating.score}</strong><span>{rating.score===null?'Не оценено':`из ${rating.max_score}`}</span></div>
+    <div><h3>Итоговый балл</h3><p>Среднее по оценённым вопросам: {rating.assessed_answers} из {rating.total_answers}. Вопросы без оценки не считаются нулём. Оценка предварительная; решение принимает человек.</p></div>
+  </div>;
+}
 
 function HighlightedAnswer({text, errors}:{text:string; errors:Finding[]}) {
   const ranges:{start:number; end:number}[]=[];
@@ -24,10 +40,10 @@ export function AnswerReport({reviews,rubric,names}:{reviews:AnswerReview[];rubr
   return <section className="answer-reviews" aria-label="Разбор ответов">
     <h2>Баллы и разбор каждого ответа</h2>
     <p className="muted">AI оценивает только содержание устного ответа: профессиональные знания и решения рабочих ситуаций. Подсвеченные фрагменты показывают основания замечаний. Практический навык и допуск к работе здесь не подтверждаются.</p>
-    {rubric&&<details className="card scoring-rubric"><summary>Как считаются баллы от 0 до 5</summary><p>{rubric.description}</p><ul>{rubric.rules.map(rule=><li key={rule}>{rule}</li>)}</ul>{rubric.not_assessed?.length?<p>Не влияет на балл: {rubric.not_assessed.join(', ')}.</p>:null}</details>}
+    {rubric&&<details className="card scoring-rubric"><summary>Как считаются баллы{rubric.max_points===10?' от 1 до 10':''}</summary><p>{rubric.description}</p><ul>{rubric.rules.map(rule=><li key={rule}>{rule}</li>)}</ul>{rubric.not_assessed?.length?<p>Не влияет на балл: {rubric.not_assessed.join(', ')}.</p>:null}</details>}
     {!reviews.length&&<p className="note">Пока нет сохранённых ответов для разбора.</p>}
     {reviews.map((review,index)=><article className="card answer-review" key={review.question_id}>
-      <header><div><span className="eyebrow">ОТВЕТ {index+1} · {names[review.skill]||review.skill}</span><h3>{review.question}</h3></div><div className={`answer-points ${review.points===null?'unrated':review.points>=4?'good':review.points>=2?'partial':'weak'}`} aria-label={review.points===null?'Ответ не оценён':`Балл за ответ: ${review.points} из ${review.max_points}`}><strong>{review.points===null?'—':review.points}</strong><span>{review.points===null?'Не оценено':`из ${review.max_points}`}</span></div></header>
+      <header><div><span className="eyebrow">ОТВЕТ {index+1} · {names[review.skill]||review.skill}</span><h3>{review.question}</h3></div><div className={`answer-points ${scoreTone(review.points,review.max_points)}`} aria-label={review.points===null?'Ответ не оценён':`Балл за ответ: ${review.points} из ${review.max_points}`}><strong>{review.points===null?'—':review.points}</strong><span>{review.points===null?'Не оценено':`из ${review.max_points}`}</span></div></header>
       <p className="score-reason">{review.reason}</p>
       {review.anchor&&<p className="score-anchor">Ближе всего к описанию: «{review.anchor.description}»</p>}
       <h4>Ваш ответ</h4><HighlightedAnswer text={review.answer} errors={[...review.errors,...(review.red_flags||[])]}/>

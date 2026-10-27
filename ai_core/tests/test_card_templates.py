@@ -75,9 +75,9 @@ def test_cards_derive_legacy_fields_and_reject_inconsistent_plans():
 
 def test_card_interview_uses_approved_wordings_probes_and_anchor_points():
     provider = FakeLLMProvider([
-        evaluation(level=3, probe=0),
-        evaluation(level=5, quote='объясню покупателю', correctness='correct'),
-        evaluation(level=4, quote='предупредил начальника', star={**FULL_STAR, 'result': False},
+        evaluation(level=6, probe=0),
+        evaluation(level=10, quote='объясню покупателю', correctness='correct'),
+        evaluation(level=8, quote='предупредил начальника', star={**FULL_STAR, 'result': False},
                    correctness='correct')])
     engine = make_engine(provider)
     first = asyncio.run(engine.handle(RuntimeEvent(type='INTERVIEW_STARTED')))
@@ -95,10 +95,12 @@ def test_card_interview_uses_approved_wordings_probes_and_anchor_points():
     assert provider.calls[0]['payload']['question_card']['not_assessed'] == ['Акцент']
     assert provider.calls[1]['payload']['parent_turn']['answer'] == 'Я проверю цену у старшего'
     report = generate_report(engine.state, mode='live')
-    assert report['template_format'] == 2 and report['scoring_rubric']['version'] == 'anchored_points_v1'
-    assert [(s['skill'], s['points'], s['answers']) for s in report['card_scores']] == [
-        ('cash.price', 5, 2), ('cash.reliability', 4, 1)]
-    assert [skill['score'] for skill in report['skills']] == [5.0, 4.0]
+    assert report['template_format'] == 2 and report['scoring_rubric']['version'] == 'anchored_points_v2'
+    assert [(s['skill'], s['points'], s['max_points'], s['answers']) for s in report['card_scores']] == [
+        ('cash.price', 10, 10, 2), ('cash.reliability', 8, 10, 1)]
+    assert [skill['score'] for skill in report['skills']] == [10.0, 8.0]
+    assert report['overall_rating'] == {'score': 9.0, 'assessed_answers': 2, 'total_answers': 2,
+                                        'max_score': 10, 'provisional': True}
 
 
 def test_probes_never_displace_planned_cards():
@@ -147,7 +149,9 @@ def test_card_evaluator_enforces_anchor_star_probes_and_grounded_red_flags():
     assert flagged.result.anchor_level == 1 and flagged.result.red_flags[0].index == 0
     # The card has one probe, so index 2 cannot become a follow-up.
     assert flagged.result.probe_index is None and not flagged.result.follow_up_required
-    assert flagged.prompt_version == 'card_evaluator_v1'
+    assert flagged.prompt_version == 'card_evaluator_v2'
+    # The card is shown to the model with named anchors for the 1-10 scale.
+    assert set(price['anchors']) == {'strong', 'acceptable', 'weak'}
 
     star_card = plan.skills[1].cards[0].evaluator_view([])
     behavioral = Question(skill='cash.reliability', difficulty=3, type='behavioral', goal=STAR['goal'],
@@ -165,22 +169,25 @@ def test_card_evaluator_enforces_anchor_star_probes_and_grounded_red_flags():
     assert missing_star.status == 'unavailable'
 
 
+def card_turn(card_index, skill, text, prompt_version='card_evaluator_v2', **result):
+    question = Question(skill=skill, difficulty=3, type='scenario', goal='g', text='q', card_index=card_index)
+    evaluated = EvaluationResult(correctness='partial', depth='medium', follow_up_required=False,
+                                 recommended_difficulty=3, **result)
+    return Turn(question=question, answer=CandidateAnswer(question_id=question.id, text=text),
+                evaluation=EvaluationAttempt(status='evaluated', attempts=1, result=evaluated,
+                                             prompt_version=prompt_version))
+
+
 def test_red_flag_caps_points_and_answer_without_own_action_is_not_scored():
     plan = CompetencyPlan.model_validate(PLAN)
-
-    def turn(card_index, skill, text, **result):
-        question = Question(skill=skill, difficulty=3, type='scenario', goal='g', text='q', card_index=card_index)
-        evaluated = EvaluationResult(correctness='partial', depth='medium', follow_up_required=False,
-                                     recommended_difficulty=3, **result)
-        return Turn(question=question, answer=CandidateAnswer(question_id=question.id, text=text),
-                    evaluation=EvaluationAttempt(status='evaluated', attempts=1, result=evaluated))
-
+    turn = card_turn
     evidence = [{'type': 'positive', 'claim': 'Проверяет цену', 'quote': 'сам поменяю'}]
     flagged = review_card_answer(
-        turn(0, 'cash.price', 'Я сам поменяю цену', evidence=evidence, anchor_level=4,
+        turn(0, 'cash.price', 'Я сам поменяю цену', evidence=evidence, anchor_level=8,
              red_flags=[{'index': 0, 'quote': 'сам поменяю'}]),
         plan.skills[0].cards[0], plan.not_assessed)
-    assert flagged['points'] == 2 and flagged['anchor']['level'] == 4
+    assert flagged['points'] == 4 and flagged['max_points'] == 10 and flagged['anchor']['level'] == 8
+    assert flagged['reason'].startswith('В ответе есть красный флаг, поэтому балл ограничен 4.')
     assert flagged['red_flags'] == [{'claim': CARD['red_flags'][0], 'quote': 'сам поменяю'}]
     assert flagged['not_assessed'] == ['Акцент']
     no_action = review_card_answer(
@@ -190,3 +197,25 @@ def test_red_flag_caps_points_and_answer_without_own_action_is_not_scored():
         plan.skills[1].cards[0], plan.not_assessed)
     assert no_action['points'] is None and no_action['status'] == 'not_assessed'
     assert not no_action['strengths']
+
+
+def test_ten_point_bands_and_old_five_point_sessions_are_doubled():
+    plan = CompetencyPlan.model_validate(PLAN)
+    card = plan.skills[0].cards[0]
+    evidence = [{'type': 'positive', 'claim': 'Проверяет цену', 'quote': 'проверю цену'}]
+
+    def review(level, **extra):
+        return review_card_answer(card_turn(0, 'cash.price', 'Я проверю цену', evidence=evidence,
+                                            anchor_level=level, **extra), card, plan.not_assessed)
+
+    bands = {level: review(level)['anchor']['description'] for level in range(1, 11)}
+    assert bands[10] == bands[9] == CARD['anchors']['strong']
+    assert bands[6] == bands[5] == CARD['anchors']['acceptable']
+    assert bands[2] == bands[1] == CARD['anchors']['weak']
+    assert bands[8] == bands[7] == 'Между сильным и приемлемым ответом.'
+    assert bands[4] == bands[3] == 'Между приемлемым и слабым ответом.'
+    assert [review(level)['points'] for level in (1, 5, 10)] == [1, 5, 10]
+    # Interviews scored before the 1-10 scale keep their meaning: 3 of 5 is 6 of 10.
+    old = review(3, prompt_version='card_evaluator_v1')
+    assert old['points'] == 6 and old['anchor'] == {'level': 6, 'description': CARD['anchors']['acceptable']}
+    assert review(5, prompt_version='card_evaluator_v1')['points'] == 10

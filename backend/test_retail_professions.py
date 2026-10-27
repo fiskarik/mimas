@@ -28,7 +28,7 @@ class CardFakeYandex(FakeYandex):
             'evidence': [{'type': 'positive', 'claim': 'Названо действие', 'quote': payload['answer']}],
             'follow_up_required': probe is not None,
             'follow_up_goal': 'Не хватает объяснения покупателю' if probe is not None else '',
-            'probe_index': probe, 'anchor_level': 3 if probe is not None else 5,
+            'probe_index': probe, 'anchor_level': 6 if probe is not None else 10,
             'star': ({'situation': True, 'action': True, 'result': True}
                      if card['type'] == 'behavioral' else None),
             'recommended_difficulty': 3}, ensure_ascii=False)
@@ -223,11 +223,11 @@ def test_cashier_interview_asks_cards_probes_and_scores_by_anchors(monkeypatch):
     report = view['report']
     assert report['stop_reason'] == 'plan_completed'
     assert report['template_format'] == 2 and report['scoring_rubric']['not_assessed'] == plan.not_assessed
-    assert [score['points'] for score in report['card_scores']] == [5, 5, 3, 3, 3]
-    assert [skill['score'] for skill in report['skills']] == [5.0, 5.0, 3.0, 3.0, 3.0]
+    assert [score['points'] for score in report['card_scores']] == [10, 10, 6, 6, 6]
+    assert [skill['score'] for skill in report['skills']] == [10.0, 10.0, 6.0, 6.0, 6.0]
     assert report['answer_reviews'][0]['anchor']['description'] == cards[0].anchors.acceptable
-    assert provisional_rating(report) == {'score': 3.8, 'assessed_answers': 5, 'total_answers': 5,
-                                          'max_score': 5, 'provisional': True}
+    assert provisional_rating(report) == report['overall_rating'] == {
+        'score': 7.6, 'assessed_answers': 5, 'total_answers': 5, 'max_score': 10, 'provisional': True}
     db.engine.dispose()
 
 

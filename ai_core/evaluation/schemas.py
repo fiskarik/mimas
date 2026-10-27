@@ -50,8 +50,9 @@ class EvaluationResult(Model):
     follow_up_question: str | None = None
     recommended_difficulty: int = Field(ge=1, le=5)
     verification_outcome: Literal['resolved', 'confirmed', 'uncertain'] = 'uncertain'
-    # Template v2 only; legacy evaluations keep the defaults.
-    anchor_level: int | None = Field(default=None, ge=1, le=5)
+    # Template v2 only; legacy evaluations keep the defaults. Scale 1-10 since
+    # card_evaluator_v2; card_evaluator_v1 results stored 1-5.
+    anchor_level: int | None = Field(default=None, ge=1, le=10)
     red_flags: list[RedFlagDraft] = Field(default_factory=list, max_length=4)
     probe_index: int | None = Field(default=None, ge=0, le=2)
     star: StarCheck | None = None
@@ -76,12 +77,22 @@ class EvaluationResult(Model):
 
 
 CARD_RESULT_FIELDS = ('anchor_level', 'red_flags', 'probe_index', 'star')
+# Card answers are scored by anchors alone; a shorter output is a faster interview turn.
+LEGACY_RESULT_FIELDS = ('contradictions', 'misconceptions', 'follow_up_question', 'verification_outcome')
+CARD_OUTPUT_FIELDS = tuple(name for name in EvaluationResult.model_fields if name not in LEGACY_RESULT_FIELDS)
 
 
 def evaluation_json_schema(*, cards: bool) -> dict:
     """Legacy questions never see the card fields, so they cannot fill them."""
     schema = EvaluationResult.model_json_schema()
-    if not cards:
+    if cards:
+        for name in LEGACY_RESULT_FIELDS:
+            schema['properties'].pop(name, None)
+        for name in ('ContradictionDraft', 'MisconceptionDraft'):
+            schema.get('$defs', {}).pop(name, None)
+        # The model may still add a dropped field; the evaluator discards it.
+        schema.pop('additionalProperties', None)
+    else:
         for name in CARD_RESULT_FIELDS:
             schema['properties'].pop(name, None)
         for name in ('RedFlagDraft', 'StarCheck'):

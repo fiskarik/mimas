@@ -8,9 +8,14 @@ import {CursorDots} from './cursor-dots';
 import type {Access} from './ai-session';
 import {assessmentFor,levelLabels,market,MarketError,salaryRange,type AssessmentView,type Level,type MyProfile,type Opportunity,type Profession} from './marketplace-api';
 import type {SkillReport} from './ai-session';
+import type {OverallRating} from './answer-report';
 import styles from './candidate-skills.module.css';
 
-type CompletedSkillReport = {id:string;targetId:string;title:string;kind:'general'|'additional';skills:SkillReport[]};
+type CompletedSkillReport = {id:string;targetId:string;title:string;kind:'general'|'additional';skills:SkillReport[];overall:OverallRating|null};
+
+function overallOf(assessment:AssessmentView):OverallRating|null {
+  return (assessment.report as {overall_rating?:OverallRating}|null)?.overall_rating||null;
+}
 
 function isCompleted(assessment:AssessmentView|null|undefined):boolean {
   return Boolean(assessment?.report&&assessment.phase==='COMPLETED');
@@ -27,7 +32,7 @@ function completedSkillReports(me:MyProfile,professions:Profession[],jobs:Opport
     if(!isCompleted(assessment))return [];
     const skills=assessedSkills(assessment);
     const name=professions.find(item=>item.id===id)?.name||me.profile.role||(assessment.report as {role?:string}).role||'Общее интервью';
-    return [{id:'general:'+id,targetId:id,title:name,kind:'general' as const,skills}];
+    return [{id:'general:'+id,targetId:id,title:name,kind:'general' as const,skills,overall:overallOf(assessment)}];
   });
   const opportunityAssessments:[string,AssessmentView][]=Array.isArray(me.assessments)
     ?me.assessments.flatMap(item=>item.opportunity_id?[[item.opportunity_id,item] as [string,AssessmentView]]:[])
@@ -36,7 +41,7 @@ function completedSkillReports(me:MyProfile,professions:Profession[],jobs:Opport
     if(!isCompleted(assessment))return [];
     const skills=assessedSkills(assessment);
     const title=jobs.find(item=>item.id===id)?.title||me.assessment_opportunities?.[id]?.title||'Дополнительное интервью';
-    return [{id:'additional:'+id,targetId:id,title,kind:'additional' as const,skills}];
+    return [{id:'additional:'+id,targetId:id,title,kind:'additional' as const,skills,overall:overallOf(assessment)}];
   });
   return [...general,...additional];
 }
@@ -180,11 +185,11 @@ export function CandidateHub(){
             {skillReports.length===0
               ?<p className={styles.empty}>Пока нет завершённого интервью. После него здесь появятся навыки, по которым MIMAS получил ваши ответы. Если оценка не удалась, это будет видно отдельно.</p>
               :skillReports.map(result=><section className={styles.interview} key={result.id} aria-label={`${result.kind==='general'?'Общее':'Дополнительное'} интервью: ${result.title}`}>
-                <div className={styles.interviewHeading}><span className="eyebrow">{result.kind==='general'?'ОБЩЕЕ ИНТЕРВЬЮ':'ДОПОЛНИТЕЛЬНОЕ ИНТЕРВЬЮ'}</span><h4>{result.title}</h4></div>
+                <div className={styles.interviewHeading}><span className="eyebrow">{result.kind==='general'?'ОБЩЕЕ ИНТЕРВЬЮ':'ДОПОЛНИТЕЛЬНОЕ ИНТЕРВЬЮ'}</span><h4>{result.title}</h4>{typeof result.overall?.score==='number'&&<span className="badge green">Итоговый балл: {result.overall.score} из {result.overall.max_score}</span>}</div>
                 {result.skills.length===0?<p className={styles.empty}>В отчёте нет навыков с сохранёнными ответами. Подробности доступны в полном отчёте.</p>:<div className={styles.skillGrid}>{result.skills.map(skill=>{
                   const positive=skill.evidence?.find(item=>item.type==='positive'&&item.claim);
                   return <article className={styles.skill} key={skill.skill}>
-                    <div className={styles.skillHeading}><strong>{skill.name||skill.skill}</strong><span className={skill.demonstrated_level||typeof skill.score==='number'?styles.assessed:styles.insufficient}>{typeof skill.score==='number'?`Предварительно: ${skill.score} из 5`:skill.demonstrated_level?`Предварительно: ${demonstratedLevel(skill.demonstrated_level)}`:'Недостаточно данных'}</span></div>
+                    <div className={styles.skillHeading}><strong>{skill.name||skill.skill}</strong><span className={skill.demonstrated_level||typeof skill.score==='number'?styles.assessed:styles.insufficient}>{typeof skill.score==='number'?`Предварительно: ${skill.score} из ${result.overall?.max_score??10}`:skill.demonstrated_level?`Предварительно: ${demonstratedLevel(skill.demonstrated_level)}`:'Недостаточно данных'}</span></div>
                     <p>{skill.evaluated_answers>0?`${skill.evaluated_answers} из ${skill.answers_received} ответов оценено`:'Ответ сохранён, но AI не смог его оценить'}</p>
                     {positive&&<p className={styles.evidence}>По ответу: {positive.claim}</p>}
                   </article>;

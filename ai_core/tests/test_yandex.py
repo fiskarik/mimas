@@ -90,11 +90,83 @@ def test_yandex_provider_rejects_invalid_json_and_accounts_accepted_request():
 
 
 def test_yandex_provider_5xx_accounts_uncertain_request():
-    provider = YandexProvider('secret', 'folder', budget=FakeBudget(),
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    provider = YandexProvider('secret', 'folder', budget=FakeBudget(), sleep=sleep,
                               transport=httpx.MockTransport(lambda _: httpx.Response(503)))
-    with pytest.raises(ProviderError):
+    with pytest.raises(ProviderError) as exc:
         asyncio.run(provider.generate(system='json', payload={}, schema={}))
-    assert [call[0] for call in provider.budget.calls] == ['reserve', 'settle']
+    assert exc.value.retryable and sleeps == [1]
+    # Both attempts may have reached Yandex, so both stay charged.
+    assert [call[0] for call in provider.budget.calls] == ['reserve', 'settle', 'reserve', 'settle']
+
+
+def ok_response(content='{"answer":"ok"}'):
+    return httpx.Response(200, json={'choices': [{'message': {'content': content}, 'finish_reason': 'stop'}],
+                                     'usage': {'prompt_tokens': 10, 'completion_tokens': 10}})
+
+
+def test_yandex_provider_skips_reasoning_for_interview_turns_only():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return ok_response()
+
+    provider = YandexProvider('secret', 'folder', transport=httpx.MockTransport(handler))
+    asyncio.run(provider.generate(system='json', payload={}, schema={}, operation='evaluation'))
+    asyncio.run(provider.generate(system='json', payload={}, schema={}, operation='template'))
+    assert bodies[0]['reasoning_effort'] == 'none'
+    assert 'reasoning_effort' not in bodies[1]
+    low = YandexProvider('secret', 'folder', transport=httpx.MockTransport(handler), reasoning_effort='low')
+    asyncio.run(low.generate(system='json', payload={}, schema={}, operation='question'))
+    assert bodies[2]['reasoning_effort'] == 'low'
+    with pytest.raises(ValueError):
+        YandexProvider('secret', 'folder', reasoning_effort='fast')
+
+
+def test_yandex_provider_drops_reasoning_effort_a_model_does_not_support():
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if 'reasoning_effort' in body:
+            return httpx.Response(400, json={'error': {
+                'message': 'Validation: Unsupported parameter(s): `reasoning_effort`'}})
+        return ok_response()
+
+    budget = FakeBudget()
+    provider = YandexProvider('secret', 'folder', transport=httpx.MockTransport(handler), budget=budget)
+    schema = {'type': 'object', 'properties': {'answer': {'type': 'string'}}, 'required': ['answer']}
+    asyncio.run(provider.generate(system='json', payload={}, schema=schema, operation='evaluation'))
+    # Same response format, now without the parameter; later calls skip it at once.
+    assert [(b['response_format']['type'], 'reasoning_effort' in b) for b in bodies] == [
+        ('json_schema', True), ('json_schema', False)]
+    assert [call[0] for call in budget.calls] == ['reserve', 'release', 'reserve', 'settle']
+    asyncio.run(provider.generate(system='json', payload={}, schema=schema, operation='evaluation'))
+    assert len(bodies) == 3 and 'reasoning_effort' not in bodies[2]
+
+
+def test_yandex_provider_retries_a_dropped_connection_once():
+    calls = []
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.ReadTimeout('slow', request=request)
+        return ok_response()
+
+    provider = YandexProvider('secret', 'folder', transport=httpx.MockTransport(handler), sleep=sleep)
+    assert json.loads(asyncio.run(provider.generate(system='json', payload={}, schema={})))['answer'] == 'ok'
+    assert len(calls) == 2 and sleeps == [1]
 
 
 def test_vision_ocr_image_and_multipage_pdf():

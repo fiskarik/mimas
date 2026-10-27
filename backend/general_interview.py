@@ -214,20 +214,6 @@ def ensure_professions(database: Database) -> None:
 
 
 def provisional_rating(report: dict) -> dict:
-    """Average only answers with verified citations; never treat unscored as zero.
-
-    Template v2 reports score each question once (its best answer, red flags applied).
-    """
-    cards = report.get('card_scores')
-    if cards is not None:
-        points = [item['points'] for item in cards
-                  if item.get('status') == 'assessed' and isinstance(item.get('points'), int)]
-        total = len(cards)
-    else:
-        reviewed = report.get('answer_reviews') or []
-        points = [item['points'] for item in reviewed
-                  if item.get('status') == 'assessed' and isinstance(item.get('points'), int)]
-        total = len(reviewed)
-    return {'score': round(sum(points) / len(points), 1) if points else None,
-            'assessed_answers': len(points), 'total_answers': total,
-            'max_score': 5, 'provisional': True}
+    """Average only answers with verified citations on the 1-10 scale; never treat unscored as zero."""
+    from ai_core.reports.generator import overall_rating
+    return overall_rating(report)

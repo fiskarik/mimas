@@ -4,6 +4,7 @@ Only the transport is provider-specific. Domain validation and evidence checks
 continue in ai_core. Requests never print API credentials or candidate content.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -19,6 +20,10 @@ CHAT_URL = 'https://ai.api.cloud.yandex.net/v1/chat/completions'
 DEFAULT_MODEL = 'deepseek-v4.1-flash'
 INPUT_RUB_PER_1K = Decimal('0.30')
 OUTPUT_RUB_PER_1K = Decimal('0.50')
+# DeepSeek reasons before answering. At the model default an answer evaluation spent
+# ~1000 hidden tokens and 20-70 s; even 'low' sometimes reasoned 2000+ tokens (3 min).
+# 'none' answers in 6-15 s, so a candidate is never left waiting past the timeout.
+REASONING_EFFORTS = ('none', 'low', 'medium', 'high')
 
 
 def model_uri(folder_id: str, model: str = DEFAULT_MODEL) -> str:
@@ -43,22 +48,43 @@ class YandexProvider:
 
     def __init__(self, api_key: str, folder_id: str, model: str = DEFAULT_MODEL, *,
                  transport: httpx.AsyncBaseTransport | None = None,
-                 timeout_seconds: float = 60, budget=None):
+                 timeout_seconds: float = 60, budget=None, reasoning_effort: str | None = 'none',
+                 max_attempts: int = 2, sleep=asyncio.sleep):
         if not api_key or not folder_id:
             raise ValueError('Set YANDEX_API_KEY and YANDEX_FOLDER_ID')
         if not 1 <= timeout_seconds <= 180:
             raise ValueError('Invalid Yandex timeout')
+        if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORTS:
+            raise ValueError('Invalid Yandex reasoning effort')
+        if not 1 <= max_attempts <= 3:
+            raise ValueError('Invalid Yandex attempt count')
         self.api_key = api_key
         self.folder_id = folder_id
         self.model = model_uri(folder_id, model)
         self.transport = transport
         self.timeout_seconds = timeout_seconds
         self.budget = budget
+        self.reasoning_effort = reasoning_effort
+        self.max_attempts = max_attempts
+        self.sleep = sleep
         self.telemetry_sink = None
         self.last_usage = {}
 
     async def generate(self, *, system: str, payload: dict, schema: dict,
                        operation: str = 'question') -> str:
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                return await self._generate_once(system=system, payload=payload, schema=schema,
+                                                 operation=operation)
+            except ProviderError as exc:
+                # A dropped connection or a busy model is usually brief. One quick
+                # retry keeps a voice interview going instead of breaking the turn.
+                if not exc.retryable or attempt == self.max_attempts:
+                    raise
+                log.warning('yandex_retry operation=%s attempt=%s error=%s', operation, attempt, exc.code)
+                await self.sleep(attempt)
+
+    async def _generate_once(self, *, system: str, payload: dict, schema: dict, operation: str) -> str:
         if not isinstance(payload, dict) or not isinstance(schema, dict):
             raise ValueError('Yandex input must be JSON objects')
         if schema:
@@ -82,26 +108,41 @@ class YandexProvider:
         formats = ([{'type': 'json_schema',
                      'json_schema': {'name': 'mimas_result', 'schema': schema, 'strict': False}},
                     {'type': 'json_object'}] if schema else [{'type': 'json_object'}])
-        for index, response_format in enumerate(formats):
+        index = -1
+        while formats:
+            index += 1
+            response_format = formats.pop(0)
             started = time.monotonic()
             reservation_id = self.budget.reserve('llm', operation, reserve_cost) if self.budget else None
             error_code = None
             usage = {}
+            request = {'model': self.model, 'temperature': 0.2, 'max_tokens': max_output_tokens,
+                       'stream': False, 'response_format': response_format, 'messages': messages}
+            # Interview turns wait for the answer; a vacancy template may think longer.
+            effort = None if operation == 'template' else self.reasoning_effort
+            if effort:
+                request['reasoning_effort'] = effort
             try:
                 async with httpx.AsyncClient(timeout=self.timeout_seconds, transport=self.transport) as client:
                     response = await client.post(
                         CHAT_URL,
                         headers={'Authorization': f'Api-Key {self.api_key}',
                                  'OpenAI-Project': self.folder_id},
-                        json={'model': self.model, 'temperature': 0.2,
-                              'max_tokens': max_output_tokens,
-                              'stream': False, 'response_format': response_format,
-                              'messages': messages},
+                        json=request,
                     )
                 if response.status_code >= 400:
+                    if response.status_code in (400, 422) and effort and 'reasoning_effort' in response.text:
+                        # A model without reasoning rejects the parameter: ask again without it.
+                        self.reasoning_effort = None
+                        if reservation_id:
+                            self.budget.release(reservation_id)
+                        self._emit(operation, started, False, index, {}, 'reasoning_unsupported')
+                        formats.insert(0, response_format)
+                        continue
                     # A schema rejection can occur for model-specific unsupported
                     # keywords; retry once in JSON-object mode, then validate locally.
-                    if response.status_code in (400, 422) and index == 0 and len(formats) > 1:
+                    if (response.status_code in (400, 422) and response_format['type'] == 'json_schema'
+                            and formats):
                         if reservation_id:
                             self.budget.release(reservation_id)
                         self._emit(operation, started, False, index, {}, 'schema_fallback')

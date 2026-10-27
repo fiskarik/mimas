@@ -1,4 +1,4 @@
-from ai_core.evaluation.schemas import EvaluationResult
+from ai_core.evaluation.schemas import CARD_OUTPUT_FIELDS, EvaluationResult
 import re
 
 
@@ -64,8 +64,11 @@ def validate_grounding(result: EvaluationResult, answer: str) -> EvaluationResul
 
 
 def prepare_card_output(data: dict, card: dict) -> dict:
-    """Name the approved probe as the follow-up goal when the model left it empty."""
-    if not isinstance(data, dict) or not data.get('follow_up_required'):
+    """Keep card fields only; name the approved probe as the follow-up goal when left empty."""
+    if not isinstance(data, dict):
+        return data
+    data = {key: value for key, value in data.items() if key in CARD_OUTPUT_FIELDS}
+    if not data.get('follow_up_required'):
         return data
     probe = data.get('probe_index')
     if str(data.get('follow_up_goal') or '').strip():

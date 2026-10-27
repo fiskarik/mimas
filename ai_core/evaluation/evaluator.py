@@ -30,20 +30,22 @@ class AnswerEvaluator:
         if abstention:
             return EvaluationAttempt(result=abstention, status='evaluated', attempts=1, provider='deterministic',
                                      prompt_version=metadata['prompt_version'])
-        payload = {'question': question.model_dump(mode='json'), 'answer': answer,
-                   'expected_level': level.value, 'previous_evidence': previous_evidence,
-                   'misconception_to_verify': misconception}
-        payload['previous_answers_for_context_only'] = previous_answers or []
-        payload['assessment_scope'] = question.goal
-        if criteria:
-            payload['approved_criteria'] = criteria
         if card:
-            payload['question_card'] = card
+            # The card is the whole scoring guide; earlier answers and levels only add input.
+            payload = {'question': question.text, 'answer': answer, 'question_card': card}
             if parent:
                 payload['parent_turn'] = parent
-        payload['verification_target'] = verification
-        payload['question']['text'] = scoped_question_text(question.text, question.goal)
-        system = prompts.SYSTEM + (prompts.CARD_RULES if card else '')
+        else:
+            payload = {'question': question.model_dump(mode='json'), 'answer': answer,
+                       'expected_level': level.value, 'previous_evidence': previous_evidence,
+                       'misconception_to_verify': misconception}
+            payload['previous_answers_for_context_only'] = previous_answers or []
+            payload['assessment_scope'] = question.goal
+            if criteria:
+                payload['approved_criteria'] = criteria
+            payload['verification_target'] = verification
+            payload['question']['text'] = scoped_question_text(question.text, question.goal)
+        system = prompts.CARD_SYSTEM + prompts.CARD_RULES if card else prompts.SYSTEM
         schema = evaluation_json_schema(cards=bool(card))
         failures: list[str] = []
         for attempt in range(1, 3):

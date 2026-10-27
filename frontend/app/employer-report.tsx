@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect,useState} from 'react';
-import {AnswerReport} from './answer-report';
+import {AnswerReport,OverallScore} from './answer-report';
 import {IntegritySummary} from './integrity-summary';
 import {EmployerMonitorReport} from './monitor-ui';
 import type {Session} from './ai-session';
@@ -28,6 +28,7 @@ export function EmployerReport({sessionId,companyKey}:{sessionId:string;companyK
   if(!session.report)return <p className="muted">Отчёт ещё не готов.</p>;
   return <div className="market-full-report">
     {recordingStatus?.incomplete&&<p role="status" className="warning">Видеозапись прервана и содержит только сохранённую часть интервью.</p>}
+    <OverallScore rating={session.report.overall_rating}/>
     <h4>Подробный разбор ответов</h4>
     <AnswerReport reviews={session.report.answer_reviews||[]} rubric={session.report.scoring_rubric} names={skillNames}/>
     {session.report.integrity&&<IntegritySummary report={session.report.integrity} questions={session.questions}/>}

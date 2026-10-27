@@ -42,8 +42,8 @@ class QuestionCard(Model):
     def evaluator_view(self, plan_not_assessed: list[str]) -> dict:
         """Card as the evaluator sees it; list positions are the indices it returns."""
         return {'type': self.type, 'goal': self.goal,
-                'anchors': {'5': self.anchors.strong, '3': self.anchors.acceptable,
-                            '1': self.anchors.weak},
+                'anchors': {'strong': self.anchors.strong, 'acceptable': self.anchors.acceptable,
+                            'weak': self.anchors.weak},
                 'red_flags': list(self.red_flags), 'probes': list(self.probes),
                 'not_assessed': [*plan_not_assessed, *self.not_assessed]}
 

@@ -154,8 +154,8 @@ def test_profession_interview_reused_and_vacancy_follow_up_optional(monkeypatch)
 
 def test_rating_ignores_unscored_answers():
     report = {'answer_reviews': [
-        {'status': 'assessed', 'points': 5}, {'status': 'not_assessed', 'points': None},
-        {'status': 'assessed', 'points': 3}]}
-    assert provisional_rating(report) == {'score': 4, 'assessed_answers': 2,
-                                          'total_answers': 3, 'max_score': 5,
+        {'status': 'assessed', 'points': 9}, {'status': 'not_assessed', 'points': None},
+        {'status': 'assessed', 'points': 6}]}
+    assert provisional_rating(report) == {'score': 7.5, 'assessed_answers': 2,
+                                          'total_answers': 3, 'max_score': 10,
                                           'provisional': True}

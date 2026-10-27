@@ -33,6 +33,9 @@ def create_llm_provider(*, provider=None, model=None, env_file=None, budget=None
             model or setting('YANDEX_MODEL', 'deepseek-v4.1-flash', env_file),
             timeout_seconds=float(setting('MIMAS_LLM_TIMEOUT_SECONDS', '60', env_file)),
             budget=budget,
+            # 'none' keeps interview turns at 6-15 s. 'low' scores a little more precisely
+            # but sometimes takes minutes; an empty value keeps the slow model default.
+            reasoning_effort=setting('YANDEX_REASONING_EFFORT', 'none', env_file) or None,
         )
     # Legacy adapters remain importable for read-only historical reports/tests.
     # Production route code selects Yandex explicitly for every new operation.

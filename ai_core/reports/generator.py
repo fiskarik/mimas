@@ -1,7 +1,8 @@
 from ai_core.interview.planner import CompetencyPlan
 from ai_core.interview.state import InterviewState, Phase, Turn
 from ai_core.models import Level
-from ai_core.reports.answer_review import RED_FLAG_CAP, RUBRIC, card_rubric, review_answer, review_card_answer
+from ai_core.reports.answer_review import (MAX_POINTS, RED_FLAG_CAP, RUBRIC, card_rubric, review_answer,
+                                           review_card_answer)
 
 
 def generate_report(state: InterviewState, *, mode: str) -> dict:
@@ -65,7 +66,22 @@ def generate_report(state: InterviewState, *, mode: str) -> dict:
     if uses_cards:
         report.update(template_format=2, card_scores=card_scores,
                       scoring_rubric=card_rubric(plan.not_assessed))
+    report['overall_rating'] = overall_rating(report)
     return report
+
+
+def overall_rating(report: dict) -> dict:
+    """Mean of assessed points on the 1-10 scale; unscored answers are never zeros.
+
+    Template v2 reports score each question once (its best answer, red flags applied).
+    """
+    cards = report.get('card_scores')
+    items = cards if cards is not None else report.get('answer_reviews') or []
+    points = [item['points'] for item in items
+              if item.get('status') == 'assessed' and isinstance(item.get('points'), int)]
+    return {'score': round(sum(points) / len(points), 1) if points else None,
+            'assessed_answers': len(points), 'total_answers': len(items),
+            'max_score': MAX_POINTS, 'provisional': True}
 
 
 def _review(plan: CompetencyPlan | None, turn: Turn) -> dict:
@@ -88,7 +104,7 @@ def _card_scores(plan: CompetencyPlan, reviews: list[dict]) -> list[dict]:
                 points = min(points, RED_FLAG_CAP)
             scores.append({'skill': competency.id, 'skill_name': competency.name, 'card_index': index,
                            'type': card.type, 'goal': card.goal, 'question': related[0]['question'],
-                           'points': points, 'max_points': 5,
+                           'points': points, 'max_points': MAX_POINTS,
                            'status': 'assessed' if points is not None else 'not_assessed',
                            'answers': len(related), 'red_flags': flags})
     return scores
