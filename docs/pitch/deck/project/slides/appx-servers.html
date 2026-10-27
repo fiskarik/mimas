@@ -1,0 +1,20 @@
+<section id="appx-servers" data-transition="fade" style="background:#f7f8f4;color:#12241b;font-family:'Golos Text', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:40px">
+<div style="display:flex;flex-direction:column;gap:12px">
+<p style="font-size:24px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#1f6b4a">Приложение</p>
+<h2 style="font-size:64px;font-weight:700;line-height:1.1;color:#12241b">Серверы в России: пример расчёта</h2>
+</div>
+<table style="font-size:28px;color:#12241b;width:1664px">
+<tr><th style="width:36%">Компонент</th><th style="width:40%">Конфигурация</th><th style="width:24%;text-align:right">₽ в месяц</th></tr>
+<tr><td>Сервер приложения ×2</td><td>4 vCPU, 8 ГБ RAM каждый</td><td style="text-align:right">≈ 10 900</td></tr>
+<tr><td>PostgreSQL, 2 хоста</td><td>2 vCPU, 8 ГБ RAM каждый</td><td style="text-align:right">≈ 11 300</td></tr>
+<tr><td>Тестовый стенд</td><td>сервер и база меньшего размера</td><td style="text-align:right">≈ 6 900</td></tr>
+<tr><td>Диски, IP, балансировщик, видео</td><td>по калькулятору Yandex Cloud</td><td style="text-align:right">≈ 3 000–10 000</td></tr>
+<tr style="background:#d8f0e1"><td>Итого</td><td>пилотная нагрузка</td><td style="text-align:right">≈ 30–40 тыс.</td></tr>
+</table>
+<div style="display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;line-height:1.45;color:#3d5446">Цены с НДС на 22.10.2026: vCPU — 892,8 ₽ в месяц, RAM — 237,6 ₽ за ГБ в месяц; хост PostgreSQL — 1,8792 ₽ за vCPU-час и 0,5072 ₽ за ГБ-час.</p>
+<p style="font-size:24px;line-height:1.45;color:#3d5446">AI по факту использования: около 20 ₽ на интервью, то есть ≈ 20 тыс. ₽ на 1 000 интервью. Разово: переезд и оформление по 152-ФЗ — [оценка].</p>
+</div>
+<p style="position:absolute;left:128px;bottom:64px;width:1664px;font-size:24px;color:#56705f">Источник: yandex.cloud — тарифы Compute Cloud и Managed Service for PostgreSQL. Перед встречей сверить в калькуляторе.</p>
+<aside>Расчёт по тарифам Yandex Cloud на 22 октября 2026 года, конфигурация с запасом для пилота: два сервера приложения, две ноды базы и тестовый стенд. Около 30–40 тысяч рублей в месяц без оплаты AI. Оплата AI зависит от числа интервью — около 20 рублей за каждое.</aside>
+</section>
