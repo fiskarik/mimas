@@ -153,9 +153,13 @@ def _harness(monkeypatch, questions, *, transcript='Мой голосовой о
              transcription_delay=0, fail_transcription=False, drop_transcription=False,
              unregistered_transcript=None, provider_error=False,
              null_committed_item_id=False, cancel_error=False,
-             time_budget_seconds=1800, expire_if_due=None):
+             time_budget_seconds=1800, expire_if_due=None, fallback_transcript=''):
     current = {'index': 0}
-    row = SimpleNamespace(state='fake-state', pending=None, started=time.time())
+    row = SimpleNamespace(state='fake-state', pending=None, started=time.time(), fallback_audio=[])
+
+    async def speechkit(database, pcm):
+        row.fallback_audio.append(len(pcm))
+        return fallback_transcript
     upstreams = []
     submitted = []
     budget = FakeBudget()
@@ -209,6 +213,7 @@ def _harness(monkeypatch, questions, *, transcript='Мой голосовой о
     monkeypatch.setattr(voice, 'InterviewState', FakeState)
     monkeypatch.setattr(voice, 'YandexBudget', lambda _: budget)
     monkeypatch.setattr(voice, 'connect', fake_connect)
+    monkeypatch.setattr(voice, '_speechkit_transcript', speechkit)
     app = FastAPI()
     voice.register_voice_route(app, None, load, view, submit, expire_if_due)
     return app, row, upstreams, submitted, budget
@@ -459,8 +464,56 @@ def test_voice_deadline_completes_during_held_answer(monkeypatch):
 
 def test_long_answer_gets_bounded_extra_transcription_time():
     assert voice._transcription_timeout_seconds(0) == voice.TRANSCRIPTION_TIMEOUT_SECONDS
-    assert voice._transcription_timeout_seconds(voice.PCM_BYTES_PER_SECOND * 60) > 45
-    assert voice._transcription_timeout_seconds(voice.PCM_BYTES_PER_SECOND * 3600) == 90
+    assert voice._transcription_timeout_seconds(voice.PCM_BYTES_PER_SECOND * 60) > 12
+    assert voice._transcription_timeout_seconds(voice.PCM_BYTES_PER_SECOND * 3600) == 20
+
+
+@pytest.mark.parametrize('stt_fails, stt_times_out', [(True, False), (False, True)])
+def test_failed_or_stalled_recognition_falls_back_to_speechkit(monkeypatch, stt_fails, stt_times_out):
+    question = SimpleNamespace(id='q1', text='Расскажите о работе.')
+    app, row, upstreams, submitted, _ = _harness(
+        monkeypatch, [question], fail_transcription=stt_fails, drop_transcription=stt_times_out,
+        fallback_transcript='Ответ, распознанный SpeechKit.')
+    monkeypatch.setattr(voice, 'TRANSCRIPTION_TIMEOUT_SECONDS', 0.07)
+    with TestClient(app) as client:
+        with client.websocket_connect('/api/ai/sessions/interview/voice') as ws:
+            _start_voice(ws, question)
+            ws.send_json({'type': 'start_answer'})
+            ws.send_json({'type': 'audio', 'audio': base64.b64encode(b'\x01\x00' * 100).decode()})
+            ws.send_json({'type': 'finish_answer'})
+            assert ws.receive_json() == {'type': 'transcript', 'speaker': 'candidate',
+                                         'text': 'Ответ, распознанный SpeechKit.'}
+            assert ws.receive_json()['type'] == 'state'
+            ws.send_json({'type': 'stop'})
+    # The held answer itself went to SpeechKit; the candidate did not repeat it.
+    assert row.fallback_audio == [200]
+    assert [answer.text for answer in submitted] == ['Ответ, распознанный SpeechKit.']
+
+
+def test_answer_cut_short_by_realtime_is_recognized_again(monkeypatch):
+    question = SimpleNamespace(id='q1', text='Расскажите о работе.')
+    full = 'Я сначала проверю цену у старшего кассира и спокойно объясню всё покупателю.'
+    app, row, upstreams, submitted, _ = _harness(
+        monkeypatch, [question], transcript='я сначала', fallback_transcript=full)
+    second = b'\x01\x00' * voice.SAMPLE_RATE
+    with TestClient(app) as client:
+        with client.websocket_connect('/api/ai/sessions/interview/voice') as ws:
+            _start_voice(ws, question)
+            ws.send_json({'type': 'start_answer'})
+            for _ in range(8):
+                ws.send_json({'type': 'audio', 'audio': base64.b64encode(second).decode()})
+            ws.send_json({'type': 'finish_answer'})
+            assert ws.receive_json() == {'type': 'transcript', 'speaker': 'candidate', 'text': full}
+            assert ws.receive_json()['type'] == 'state'
+            ws.send_json({'type': 'stop'})
+    assert row.fallback_audio == [len(second) * 8]
+    assert [answer.text for answer in submitted] == [full]
+
+
+def test_short_complete_answer_does_not_call_speechkit(monkeypatch):
+    assert not voice._looks_cut_short('Позову старшего кассира.', voice.PCM_BYTES_PER_SECOND * 3)
+    assert voice._looks_cut_short('я сначала', voice.PCM_BYTES_PER_SECOND * 8)
+    assert voice._looks_cut_short('', 2)
 
 
 def test_voice_spend_reserves_windows_before_audio_and_releases_idle():

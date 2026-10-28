@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from contextlib import contextmanager
 from decimal import Decimal
 from io import BytesIO
@@ -221,6 +222,29 @@ def test_speechkit_async_transcription():
     assert asyncio.run(services.transcribe_webm(b'webm')) == 'Тестовый ответ'
     assert len(calls) == 3
     assert budget.calls[0][3] == Decimal('0.1515')
+
+
+def test_speechkit_recognizes_raw_voice_interview_audio():
+    formats = []
+
+    def handler(request):
+        if request.url.path.endswith('/recognizeFileAsync'):
+            body = json.loads(request.content)
+            formats.append(body['recognitionModel']['audioFormat'])
+            assert base64.b64decode(body['content']) == pcm
+            return httpx.Response(200, json={'id': 'stt-pcm'})
+        if request.url.path.endswith('/operations/stt-pcm'):
+            return httpx.Response(200, json={'done': True})
+        return httpx.Response(200, json={'result': {'final': {'alternatives': [{'text': 'Ответ голосом'}]}}})
+
+    pcm = b'\x01\x00' * 44100 * 3
+    services = YandexServices('secret', 'folder', transport=httpx.MockTransport(handler))
+    assert asyncio.run(services.transcribe_pcm(pcm, 44100)) == 'Ответ голосом'
+    # No ffmpeg: the PCM the browser streams goes to SpeechKit as is.
+    assert formats == [{'rawAudio': {'audioEncoding': 'LINEAR16_PCM', 'sampleRateHertz': 44100,
+                                     'audioChannelCount': 1}}]
+    with pytest.raises(YandexServiceError):
+        asyncio.run(services.transcribe_pcm(b'', 44100))
 
 
 def test_speechkit_failure_keeps_input_for_retry():

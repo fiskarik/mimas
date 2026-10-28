@@ -151,6 +151,20 @@ class YandexServices:
         if not payload or len(payload) > MAX_AUDIO_BYTES:
             raise YandexServiceError('Аудио должно быть не больше 12 МБ.', 'input_too_large')
         ogg, duration = await self._ogg_opus(payload)
+        return await self._recognize(ogg, {'containerAudio': {'containerAudioType': 'OGG_OPUS'}}, duration)
+
+    async def transcribe_pcm(self, pcm: bytes, sample_rate: int) -> str:
+        """16-bit mono PCM as the voice interview streams it; SpeechKit takes it without conversion."""
+        if not pcm or len(pcm) % 2 or len(pcm) > MAX_AUDIO_BYTES:
+            raise YandexServiceError('Аудио должно быть не больше 12 МБ.', 'input_too_large')
+        duration = len(pcm) / (sample_rate * 2)
+        if not 0 < duration <= MAX_AUDIO_SECONDS:
+            raise YandexServiceError('Запись должна быть короче трёх минут.', 'audio_duration_invalid')
+        return await self._recognize(pcm, {'rawAudio': {'audioEncoding': 'LINEAR16_PCM',
+                                                        'sampleRateHertz': sample_rate,
+                                                        'audioChannelCount': 1}}, duration)
+
+    async def _recognize(self, audio: bytes, audio_format: dict, duration: float) -> str:
         charged_seconds = max(15, math.ceil(duration))
         estimate = STT_RUB_PER_15_SECONDS * Decimal(charged_seconds) / Decimal('15')
         reservation = self.budget.reserve('speechkit', 'transcription', estimate) if self.budget else None
@@ -161,10 +175,10 @@ class YandexServices:
                 response = await client.post(
                     STT_BASE + '/stt/v3/recognizeFileAsync',
                     headers=self._headers,
-                    json={'content': base64.b64encode(ogg).decode('ascii'),
+                    json={'content': base64.b64encode(audio).decode('ascii'),
                           'recognitionModel': {
                               'model': 'general',
-                              'audioFormat': {'containerAudio': {'containerAudioType': 'OGG_OPUS'}},
+                              'audioFormat': audio_format,
                               'languageRestriction': {'restrictionType': 'WHITELIST',
                                                       'languageCode': ['ru-RU', 'en-US']}}},
                 )

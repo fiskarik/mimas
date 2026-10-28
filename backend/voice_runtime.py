@@ -33,8 +33,11 @@ SAMPLE_RATE = 44100
 PCM_BYTES_PER_SECOND = SAMPLE_RATE * 2
 MAX_AUDIO_CHUNK_BYTES = PCM_BYTES_PER_SECOND * 2
 # Push-to-talk commits one complete answer on release. No server VAD timer
-# may turn a thinking pause into an incomplete answer.
-TRANSCRIPTION_TIMEOUT_SECONDS = 30.0
+# may turn a thinking pause into an incomplete answer. Realtime recognition
+# normally answers within a second; after this wait SpeechKit transcribes the
+# same held audio instead (Yandex realtime STT has failed and cut answers short).
+TRANSCRIPTION_TIMEOUT_SECONDS = 8.0
+MAX_FALLBACK_AUDIO_BYTES = PCM_BYTES_PER_SECOND * 120
 # Provider output deltas are not microphone frames: one delta can contain
 # several seconds of speech. Bound it separately, then forward small frames.
 MAX_TTS_DELTA_BYTES = 8 * 1024 * 1024
@@ -273,8 +276,26 @@ def _tts_audio_chunks(encoded: str):
 def _transcription_timeout_seconds(audio_bytes: int) -> float:
     # A long held answer can take longer to transcribe after commit. This only
     # bounds provider failure; successful transcripts are submitted immediately.
-    return min(90.0, TRANSCRIPTION_TIMEOUT_SECONDS
-               + 0.3 * audio_bytes / PCM_BYTES_PER_SECOND)
+    return min(20.0, TRANSCRIPTION_TIMEOUT_SECONDS
+               + 0.1 * audio_bytes / PCM_BYTES_PER_SECOND)
+
+
+def _looks_cut_short(transcript: str, audio_bytes: int) -> bool:
+    """Realtime recognition has returned only the first phrase of a long held answer."""
+    # Speech is about two words a second; under one word per two seconds the
+    # transcript most likely lost part of the answer (seen: 5 s of speech -> 2 words).
+    seconds = audio_bytes / PCM_BYTES_PER_SECOND
+    return not transcript or (seconds >= 4 and len(transcript.split()) < seconds / 2)
+
+
+async def _speechkit_transcript(database, pcm: bytes) -> str:
+    """Recognize a held answer with SpeechKit when realtime recognition fails; '' if it cannot."""
+    from backend.yandex_services import YandexServiceError, configured_yandex_services
+    try:
+        return (await configured_yandex_services(database).transcribe_pcm(pcm, SAMPLE_RATE)).strip()
+    except (YandexServiceError, BudgetExceeded, ValueError) as exc:
+        LOGGER.warning('SpeechKit fallback failed: %s', getattr(exc, 'code', type(exc).__name__))
+        return ''
 
 
 def _spoken_matches_question(spoken: str, question: str) -> bool:
@@ -391,6 +412,8 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                 finish_requested_at = 0.0
                 answer_held = False
                 answer_audio_bytes = 0
+                # The held answer is kept so SpeechKit can recognize it if realtime fails.
+                answer_audio = bytearray()
                 pending_item_id: str | None = None
                 flush_generation = 0
                 flush_task: asyncio.Task | None = None
@@ -448,6 +471,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                     finish_requested_at = 0.0
                     answer_held = False
                     answer_audio_bytes = 0
+                    answer_audio.clear()
                     pending_item_id = None
                     current_question = question
                     speaking = True
@@ -489,6 +513,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             if listening and not answer_held and not finish_requested_at:
                                 answer_held = True
                                 answer_audio_bytes = 0
+                                answer_audio.clear()
                             continue
                         if kind == 'finish_answer':
                             if listening and answer_held and not finish_requested_at:
@@ -515,6 +540,7 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                         await stt_send({'type': 'input_audio_buffer.append',
                                         'audio': event['audio']})
                         answer_audio_bytes += len(raw)
+                        answer_audio.extend(raw[:max(0, MAX_FALLBACK_AUDIO_BYTES - len(answer_audio))])
 
                 async def pump_stt():
                     async for packet in stt:
@@ -542,6 +568,34 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                 await retire_stt_item(old_item_id)
                         await stt_events.put(event)
                     raise VoiceProtocolError('Соединение с распознаванием речи прервалось.')
+
+                async def recover_transcript() -> str:
+                    # Realtime recognition failed, stalled or cut the answer short: SpeechKit
+                    # recognizes the same held audio, so the candidate need not repeat it.
+                    return await _speechkit_transcript(database, bytes(answer_audio)) if answer_audio else ''
+
+                async def deliver(transcript: str):
+                    nonlocal listening
+                    if len(transcript) > 16000:
+                        raise VoiceProtocolError('Ответ слишком длинный. Подключитесь заново и повторите его короче.')
+                    listening = False
+                    await send({'type': 'transcript', 'speaker': 'candidate', 'text': transcript})
+                    try:
+                        result = await submit_answer(
+                            iid, CandidateAnswer(question_id=current_question.id, text=transcript), token)
+                    except (HTTPException, BudgetExceeded, ProviderError) as exc:
+                        # The answer endpoint checkpoints the transcript before
+                        # provider I/O. Reconnect can resume a pending answer.
+                        await send({'type': 'error', 'message': ('AI временно недоступен. Ответ сохранён.'
+                                                               if isinstance(exc, ProviderError) else
+                                                               str(getattr(exc, 'detail', exc)))})
+                        raise VoiceProtocolError('Ответ сохранён. Подключитесь заново для продолжения.') from exc
+                    await send({'type': 'state', 'session': result})
+                    if result.get('phase') == Phase.WAITING_FOR_ANSWER and result.get('current_question'):
+                        fresh = load(iid, token)
+                        await speak(InterviewState.model_validate_json(fresh.state).questions[-1])
+                    else:
+                        await send({'type': 'speech_stopped'})
 
                 async def receive_stt():
                     nonlocal listening, finish_requested_at, answer_audio_bytes, pending_item_id
@@ -585,45 +639,43 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                             pending_item_id = None
                             cancel_answer_flush()
                             transcript = (event.get('transcript') or '').strip()
-                            if not transcript:
-                                finish_requested_at = 0.0
-                                answer_audio_bytes = 0
-                                await retire_stt_item(item_id)
-                                await send({'type': 'answer_retry', 'message':
-                                            'Речь не удалось распознать. Удерживайте кнопку и повторите.'})
-                                continue
-                            if len(transcript) > 16000:
-                                raise VoiceProtocolError('Ответ слишком длинный. Подключитесь заново и повторите его короче.')
-                            listening = False
                             # The provider can acknowledge a commit with item_id=null.
                             # Retire the ID from the transcript itself so the previous
                             # answer cannot leak into recognition of the next turn.
                             await retire_stt_item(item_id)
-                            await send({'type': 'transcript', 'speaker': 'candidate', 'text': transcript})
-                            try:
-                                result = await submit_answer(
-                                    iid, CandidateAnswer(question_id=current_question.id, text=transcript), token)
-                            except (HTTPException, BudgetExceeded, ProviderError) as exc:
-                                # The answer endpoint checkpoints the transcript before
-                                # provider I/O. Reconnect can resume a pending answer.
-                                await send({'type': 'error', 'message': ('AI временно недоступен. Ответ сохранён.'
-                                                                       if isinstance(exc, ProviderError) else
-                                                                       str(getattr(exc, 'detail', exc)))})
-                                raise VoiceProtocolError('Ответ сохранён. Подключитесь заново для продолжения.') from exc
-                            await send({'type': 'state', 'session': result})
-                            if result.get('phase') == Phase.WAITING_FOR_ANSWER and result.get('current_question'):
-                                fresh = load(iid, token)
-                                await speak(InterviewState.model_validate_json(fresh.state).questions[-1])
-                            else:
-                                await send({'type': 'speech_stopped'})
+                            if _looks_cut_short(transcript, answer_audio_bytes):
+                                recovered = await recover_transcript()
+                                if len(recovered.split()) > len(transcript.split()):
+                                    transcript = recovered
+                            if not transcript:
+                                finish_requested_at = 0.0
+                                answer_audio_bytes = 0
+                                await send({'type': 'answer_retry', 'message':
+                                            'Речь не удалось распознать. Удерживайте кнопку и повторите.'})
+                                continue
+                            await deliver(transcript)
                         elif kind == 'conversation.item.input_audio_transcription.failed':
                             item_id = event.get('item_id')
                             if isinstance(item_id, str) and pending_item_id in (item_id, ''):
-                                raise VoiceProtocolError('Распознавание не удалось. Подключитесь заново и повторите ответ.')
+                                seen_items.add(item_id)
+                                pending_item_id = None
+                                cancel_answer_flush()
+                                await retire_stt_item(item_id)
+                                transcript = await recover_transcript()
+                                if not transcript:
+                                    raise VoiceProtocolError('Распознавание не удалось. Подключитесь заново и повторите ответ.')
+                                await deliver(transcript)
                         elif kind == '_transcription_timeout':
                             if (event.get('generation') == flush_generation and listening
                                     and finish_requested_at):
-                                raise VoiceProtocolError('Распознавание задержалось. Подключитесь заново и повторите ответ.')
+                                if pending_item_id:
+                                    seen_items.add(pending_item_id)
+                                    await retire_stt_item(pending_item_id)
+                                pending_item_id = None
+                                transcript = await recover_transcript()
+                                if not transcript:
+                                    raise VoiceProtocolError('Распознавание задержалось. Подключитесь заново и повторите ответ.')
+                                await deliver(transcript)
                         elif kind == 'error':
                             error = event.get('error') or {}
                             origin = error.get('event_id') if isinstance(error, dict) else None
@@ -634,6 +686,16 @@ def register_voice_route(app: FastAPI, database, load, public_view, submit_answe
                                 continue
                             LOGGER.warning('Yandex voice stt error: code=%s',
                                            _provider_error_code(event))
+                            if listening and finish_requested_at:
+                                # The answer is already held here: recognize it without realtime.
+                                if pending_item_id:
+                                    seen_items.add(pending_item_id)
+                                pending_item_id = None
+                                cancel_answer_flush()
+                                transcript = await recover_transcript()
+                                if transcript:
+                                    await deliver(transcript)
+                                    continue
                             raise VoiceProtocolError('Распознавание речи временно недоступно.')
 
                 async def receive_tts():
