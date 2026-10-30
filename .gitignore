@@ -14,3 +14,13 @@ data/
 monitor/windows/**/bin/
 monitor/windows/**/obj/
 monitor/dist/
+
+# Internal documents: kept on disk, not published
+docs/plan/
+docs/pitch/
+docs/reports/
+docs/review-issues.md
+docs/launch-risks.md
+docs/ml-plan.md
+docs/legal/*
+!docs/legal/third-party-notices.md

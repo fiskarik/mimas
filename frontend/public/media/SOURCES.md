@@ -1,11 +1,9 @@
 # mimas motion assets
 
-- `mimas-orb.mp4` / `mimas-orb-poster.webp`: prepared from the user-supplied
-  `document_5294113509527827677.mp4`. The central 360px square is resized to
-  480px; a forward/reverse sequence creates a seamless silent loop.
 - `mimas-fluid.mp4` / `mimas-fluid-poster.webp`: original procedural animation
   made for mimas with `scripts/render_mimas_fluid.py`. 1280×720, 24 fps, 12 seconds,
   H.264, silent, periodic motion. No third-party stock footage or network runtime.
+  It is used both as the hero background and inside the interview orb.
 - The two interactive diagrams are original SVG/CSS/React implementations of
   the user-provided visual references, adapted to technical interviews.
 

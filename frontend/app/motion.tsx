@@ -60,7 +60,7 @@ export function MotionVideo({src, poster, className = '', speed = 1}: {
 export function InterviewOrb({state = 'idle', compact = false}: {state?: OrbState; compact?: boolean}) {
   const speed = {idle: .7, speaking: 1.25, listening: .85, thinking: 1.6, saved: .55}[state];
   return <div className={`glass-orb neural-orb ${compact ? 'orb-compact' : ''} orb-${state}`} aria-hidden="true">
-    <MotionVideo src="/media/mimas-orb.mp4" poster="/media/mimas-orb-poster.webp" speed={speed}/>
+    <MotionVideo src="/media/mimas-fluid.mp4" poster="/media/mimas-fluid-poster.webp" speed={speed}/>
   </div>;
 }
 
